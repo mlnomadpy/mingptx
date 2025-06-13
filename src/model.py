@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import flax.nnx as nnx
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 
-from src.config import ModelConfig
+from config import ModelConfig
 
 def causal_attention_mask(seq_len):
     return jnp.tril(jnp.ones((seq_len, seq_len)))

@@ -12,9 +12,9 @@ import wandb
 import matplotlib.pyplot as plt
 import argparse
 
-from src.config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
-from src.dataset import load_text_dataset
-from src.model import MiniGPT
+from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
+from dataset import load_text_dataset
+from model import MiniGPT
 
 def setup_mesh():
     devices = jax.devices()

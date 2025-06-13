@@ -3,7 +3,7 @@ from datasets import load_dataset
 from transformers import AutoTokenizer
 from dataclasses import dataclass
 
-from src.config import DataConfig, ModelConfig, TrainConfig
+from config import DataConfig, ModelConfig, TrainConfig
 
 @dataclass
 class HFTextDataset:
