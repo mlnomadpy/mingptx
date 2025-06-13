@@ -1,0 +1,11 @@
+jax
+flax
+optax
+orbax-checkpoint
+datasets
+transformers
+wandb
+matplotlib
+grain-nightly
+tiktoken
+pandas 
