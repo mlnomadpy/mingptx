@@ -1,5 +1,6 @@
 import wandb
 import matplotlib.pyplot as plt
+import jax.tree_util as jtu
 
 class Logger:
     def __init__(self, project_name, config, use_wandb=True):
@@ -54,4 +55,21 @@ def visualize_and_log_loss(metrics_history, logger, step):
     plt.savefig(loss_plot_path)
     plt.close() # prevent displaying the plot locally
     
-    logger.log_image("training_loss_plot", loss_plot_path, step=step) 
+    logger.log_image("training_loss_plot", loss_plot_path, step=step)
+
+def flatten_for_logging(pytree, prefix='grads'):
+    """Flattens a PyTree and formats the keys for wandb logging."""
+    flat_metrics = {}
+    
+    def format_key(key_path):
+        # Creates a readable string from the key path returned by tree_flatten_with_path
+        return ".".join(str(p.key) if p.key is not None else str(p.idx) for p in key_path)
+
+    leaves, _ = jtu.tree_flatten_with_path(pytree)
+    
+    for path, value in leaves:
+        if value is not None:
+            log_key = f"{prefix}/{format_key(path)}"
+            flat_metrics[log_key] = value.item()
+            
+    return flat_metrics 

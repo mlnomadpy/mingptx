@@ -13,7 +13,7 @@ import argparse
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
 from model import MiniGPT
-from logging import Logger, visualize_and_log_loss
+from logging import Logger, visualize_and_log_loss, flatten_for_logging
 
 def setup_mesh():
     devices = jax.devices()
@@ -123,6 +123,8 @@ def main():
         (loss, _), grads = grad_fn(mdl, b)
         mets.update(loss=loss)
         opt.update(grads)
+        grad_norms = jax.tree_util.tree_map(lambda x: jnp.linalg.norm(x) if x is not None else 0.0, grads)
+        return grad_norms
 
     # Initial text generation
     start_prompt = "Once upon a time"
@@ -151,13 +153,18 @@ def main():
             if mesh:
                 batch_data = jax.device_put(batch_data, NamedSharding(mesh, P('batch', None)))
             
-            train_step(model, optimizer, metrics_manager, batch_data)
+            grad_norms = train_step(model, optimizer, metrics_manager, batch_data)
 
             if (step + 1) % config.train_config.log_interval == 0:
                 computed_metrics = metrics_manager.compute()
                 loss_value = computed_metrics['loss'].item()
                 metrics_history['train_loss'].append(loss_value)
-                logger.log_metrics({'train_loss': loss_value}, step=step + 1)
+                
+                log_metrics = {'train_loss': loss_value}
+                flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
+                log_metrics.update(flat_grad_norms)
+                
+                logger.log_metrics(log_metrics, step=step + 1)
                 metrics_manager.reset()
 
                 elapsed_time = time.time() - start_time

@@ -9,5 +9,3 @@ matplotlib
 grain-nightly
 tiktoken
 pandas 
-wandb
-nmn
