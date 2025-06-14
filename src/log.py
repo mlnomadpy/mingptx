@@ -62,8 +62,18 @@ def flatten_for_logging(pytree, prefix='grads'):
     flat_metrics = {}
     
     def format_key(key_path):
-        # Creates a readable string from the key path returned by tree_flatten_with_path
-        return ".".join(str(p.key) if p.key is not None else str(p.idx) for p in key_path)
+        """Creates a readable string from the key path returned by tree_flatten_with_path."""
+        keys = []
+        for p in key_path:
+            if isinstance(p, jtu.GetAttrKey):
+                keys.append(p.name)
+            elif isinstance(p, jtu.DictKey):
+                keys.append(str(p.key))
+            elif isinstance(p, jtu.SequenceKey):
+                keys.append(str(p.idx))
+            else:
+                keys.append(str(p)) # Fallback for other key types
+        return ".".join(keys)
 
     leaves, _ = jtu.tree_flatten_with_path(pytree)
     
