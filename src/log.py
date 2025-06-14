@@ -94,14 +94,9 @@ def get_kernel_determinants(model: nnx.Module):
         if not (isinstance(leaf, jnp.ndarray) and leaf.ndim == 2):
             return False
         
-        last_key = path[-1]
-        key_name = ""
-        if isinstance(last_key, jtu.GetAttrKey):
-            key_name = last_key.name
-        elif isinstance(last_key, jtu.DictKey):
-            key_name = last_key.key
+        last_key_str = str(path[-1]).lower()
         
-        return 'kernel' in str(key_name) or 'embedding' in str(key_name)
+        return 'kernel' in last_key_str or 'embedding' in last_key_str
 
     def calculate_slogdet(leaf):
         if leaf is None:
@@ -110,6 +105,8 @@ def get_kernel_determinants(model: nnx.Module):
         # For non-square matrices M, det(M.T @ M) gives the squared volume of the parallelepiped
         # spanned by the columns of M. Using slogdet for numerical stability.
         gramian = leaf.T @ leaf
+        # Add a small epsilon for stability if gramian is singular
+        gramian += jnp.eye(gramian.shape[0]) * 1e-8
         _sign, logabsdet = jnp.linalg.slogdet(gramian)
         return logabsdet
 
