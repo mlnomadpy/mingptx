@@ -209,7 +209,7 @@ def main():
     # Save checkpoint
     state = nnx.state(model)
     checkpointer = orbax.PyTreeCheckpointer()
-    save_dir = config.train_config.checkpoint_dir
+    save_dir = os.path.abspath(config.train_config.checkpoint_dir)
     os.makedirs(save_dir, exist_ok=True)
     checkpointer.save(os.path.join(save_dir, 'model_checkpoint'), state)
     print(f"Checkpoint saved to {save_dir}")
