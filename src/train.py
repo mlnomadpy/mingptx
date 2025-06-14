@@ -39,6 +39,7 @@ def parse_args():
     parser.add_argument("--feed_forward_dim", type=int, default=default_config.model_config.feed_forward_dim, help="Dimensionality of the feed-forward network.")
     parser.add_argument("--num_transformer_blocks", type=int, default=default_config.model_config.num_transformer_blocks, help="Number of transformer blocks.")
     parser.add_argument("--dropout_rate", type=float, default=default_config.model_config.dropout_rate, help="Dropout rate.")
+    parser.add_argument("--use_dropconnect", type=lambda x: (str(x).lower() == 'true'), default=default_config.model_config.use_dropconnect, help="Whether to use dropconnect.")
 
     # Data args
     parser.add_argument("--dataset_name", type=str, default=default_config.data_config.dataset_name, help="Hugging Face dataset name.")
@@ -66,7 +67,8 @@ def parse_args():
             num_heads=args.num_heads,
             feed_forward_dim=args.feed_forward_dim,
             num_transformer_blocks=args.num_transformer_blocks,
-            dropout_rate=args.dropout_rate
+            dropout_rate=args.dropout_rate,
+            use_dropconnect=args.use_dropconnect
         ),
         data_config=DataConfig(
             dataset_name=args.dataset_name,

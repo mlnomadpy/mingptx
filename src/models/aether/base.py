@@ -15,6 +15,8 @@ class TransformerBlock(nnx.Module):
         self.mha = MultiHeadAttention(
             num_heads=config.num_heads,
             in_features=config.embed_dim,
+            use_dropconnect=config.use_dropconnect,
+            dropconnect_rate=config.dropout_rate,
             kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
             alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
@@ -24,6 +26,8 @@ class TransformerBlock(nnx.Module):
         self.non_linear1 = YatNMN(
             in_features=config.embed_dim,
             out_features=config.feed_forward_dim,
+            use_dropconnect=config.use_dropconnect,
+            drop_rate=config.dropout_rate,
             kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
             alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
@@ -32,6 +36,8 @@ class TransformerBlock(nnx.Module):
         self.non_linear2 = YatNMN(
             in_features=config.feed_forward_dim,
             out_features=config.embed_dim,
+            use_dropconnect=config.use_dropconnect,
+            drop_rate=config.dropout_rate,
             kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
             alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
