@@ -100,23 +100,34 @@ def get_flat_determinants(model: nnx.Module):
     Calculates the log-abs-determinant of the Gramian matrix for kernel and embedding weights
     and returns them as a flat dictionary for logging.
     """
+    print("\n[Debug] Inside get_flat_determinants...")
     model_state = nnx.state(model)
     flat_determinants = {}
     
     leaves, _ = jtu.tree_flatten_with_path(model_state)
+    print(f"[Debug] Found {len(leaves)} leaves in model state.")
     
     for path, leaf in leaves:
+        path_str_for_debug = ".".join(get_key_name_from_path_entry(p) for p in path)
+        
         if isinstance(leaf, jnp.ndarray) and leaf.ndim == 2:
             last_key_name = get_key_name_from_path_entry(path[-1]).lower()
+            print(f"[Debug] Found 2D array at path: {path_str_for_debug} | Last key: '{last_key_name}' | Shape: {leaf.shape}")
             
             if 'kernel' in last_key_name or 'embedding' in last_key_name:
+                print(f"  -> MATCH FOUND for '{last_key_name}'. Calculating determinant.")
                 gramian = leaf.T @ leaf
                 gramian += jnp.eye(gramian.shape[0]) * 1e-8
                 _sign, logabsdet = jnp.linalg.slogdet(gramian)
                 
-                path_str = ".".join(get_key_name_from_path_entry(p) for p in path)
-                log_key = f"determinants/{path_str}"
+                log_key = f"determinants/{path_str_for_debug}"
                 
                 flat_determinants[log_key] = logabsdet.item()
-                
+    
+    if not flat_determinants:
+        print("[Debug] WARNING: No kernel or embedding weights were matched. Determinant dict is empty.")
+    else:
+        print(f"[Debug] Calculated determinants: {flat_determinants}")
+    print("[Debug] Exiting get_flat_determinants.\n")
+        
     return flat_determinants 
