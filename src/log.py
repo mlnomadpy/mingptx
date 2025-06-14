@@ -85,38 +85,44 @@ def flatten_for_logging(pytree, prefix='grads'):
             
     return flat_metrics
 
+def get_key_name_from_path_entry(key_entry):
+    """Safely extracts a string representation from a JAX PyTree KeyEntry."""
+    if isinstance(key_entry, jtu.GetAttrKey):
+        return key_entry.name
+    elif isinstance(key_entry, jtu.DictKey):
+        return str(key_entry.key)
+    elif isinstance(key_entry, jtu.SequenceKey):
+        return str(key_entry.idx)
+    return str(key_entry)
+
 def get_kernel_determinants(model: nnx.Module):
     """Calculates the log-abs-determinant of the Gramian matrix (kernel.T @ kernel) for kernel weights."""
-    model_state = model
+    model_state = nnx.state(model)
 
     def is_kernel_or_embedding(path, leaf):
         # Identify 2D arrays that are likely model weights.
         if not (isinstance(leaf, jnp.ndarray) and leaf.ndim == 2):
             return False
         
-        last_key_str = str(path[-1]).lower()
+        last_key_name = get_key_name_from_path_entry(path[-1]).lower()
         
-        return 'kernel' in last_key_str or 'embedding' in last_key_str
+        return 'kernel' in last_key_name or 'embedding' in last_key_name
 
     def calculate_slogdet(leaf):
         if leaf is None:
             return None
         
-        # For non-square matrices M, det(M.T @ M) gives the squared volume of the parallelepiped
-        # spanned by the columns of M. Using slogdet for numerical stability.
         gramian = leaf.T @ leaf
         # Add a small epsilon for stability if gramian is singular
         gramian += jnp.eye(gramian.shape[0]) * 1e-8
         _sign, logabsdet = jnp.linalg.slogdet(gramian)
         return logabsdet
 
-    # Create a PyTree containing only the kernel weights, with `None` elsewhere.
     kernel_weights = jtu.tree_map_with_path(
         lambda path, leaf: leaf if is_kernel_or_embedding(path, leaf) else None,
         model_state
     )
 
-    # Calculate the log-abs-determinant for each kernel weight.
     determinants = jtu.tree_map(calculate_slogdet, kernel_weights)
     
     return determinants 
