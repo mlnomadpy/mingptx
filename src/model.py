@@ -17,7 +17,7 @@ class TransformerBlock(nnx.Module):
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
         )
-        self.dropout1 = nnx.Dropout(rate=config.dropout_rate)
+        self.dropout1 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
         self.layer_norm1 = nnx.LayerNorm(
             epsilon=1e-6,
             num_features=config.embed_dim,
@@ -39,7 +39,7 @@ class TransformerBlock(nnx.Module):
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
         )
-        self.dropout2 = nnx.Dropout(rate=config.dropout_rate)
+        self.dropout2 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
         self.layer_norm2 = nnx.LayerNorm(
             epsilon=1e-6,
             num_features=config.embed_dim,
