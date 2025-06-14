@@ -95,34 +95,28 @@ def get_key_name_from_path_entry(key_entry):
         return str(key_entry.idx)
     return str(key_entry)
 
-def get_kernel_determinants(model: nnx.Module):
-    """Calculates the log-abs-determinant of the Gramian matrix (kernel.T @ kernel) for kernel weights."""
+def get_flat_determinants(model: nnx.Module):
+    """
+    Calculates the log-abs-determinant of the Gramian matrix for kernel and embedding weights
+    and returns them as a flat dictionary for logging.
+    """
     model_state = nnx.state(model)
-
-    def is_kernel_or_embedding(path, leaf):
-        # Identify 2D arrays that are likely model weights.
-        if not (isinstance(leaf, jnp.ndarray) and leaf.ndim == 2):
-            return False
-        
-        last_key_name = get_key_name_from_path_entry(path[-1]).lower()
-        
-        return 'kernel' in last_key_name or 'embedding' in last_key_name
-
-    def calculate_slogdet(leaf):
-        if leaf is None:
-            return None
-        
-        gramian = leaf.T @ leaf
-        # Add a small epsilon for stability if gramian is singular
-        gramian += jnp.eye(gramian.shape[0]) * 1e-8
-        _sign, logabsdet = jnp.linalg.slogdet(gramian)
-        return logabsdet
-
-    kernel_weights = jtu.tree_map_with_path(
-        lambda path, leaf: leaf if is_kernel_or_embedding(path, leaf) else None,
-        model_state
-    )
-
-    determinants = jtu.tree_map(calculate_slogdet, kernel_weights)
+    flat_determinants = {}
     
-    return determinants 
+    leaves, _ = jtu.tree_flatten_with_path(model_state)
+    
+    for path, leaf in leaves:
+        if isinstance(leaf, jnp.ndarray) and leaf.ndim == 2:
+            last_key_name = get_key_name_from_path_entry(path[-1]).lower()
+            
+            if 'kernel' in last_key_name or 'embedding' in last_key_name:
+                gramian = leaf.T @ leaf
+                gramian += jnp.eye(gramian.shape[0]) * 1e-8
+                _sign, logabsdet = jnp.linalg.slogdet(gramian)
+                
+                path_str = ".".join(get_key_name_from_path_entry(p) for p in path)
+                log_key = f"determinants/{path_str}"
+                
+                flat_determinants[log_key] = logabsdet.item()
+                
+    return flat_determinants 

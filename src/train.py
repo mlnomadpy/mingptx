@@ -13,7 +13,7 @@ import argparse
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
 from model import MiniGPT
-from log import Logger, visualize_and_log_loss, flatten_for_logging, get_kernel_determinants
+from log import Logger, visualize_and_log_loss, flatten_for_logging, get_flat_determinants
 
 def setup_mesh():
     devices = jax.devices()
@@ -165,8 +165,7 @@ def main():
                 flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
                 log_metrics.update(flat_grad_norms)
 
-                kernel_determinants = get_kernel_determinants(model)
-                flat_determinants = flatten_for_logging(kernel_determinants, prefix='determinants')
+                flat_determinants = get_flat_determinants(model)
                 log_metrics.update(flat_determinants)
                 
                 logger.log_metrics(log_metrics, step=step + 1)
