@@ -87,7 +87,7 @@ def flatten_for_logging(pytree, prefix='grads'):
 
 def get_kernel_determinants(model: nnx.Module):
     """Calculates the log-abs-determinant of the Gramian matrix (kernel.T @ kernel) for kernel weights."""
-    model_state = nnx.state(model)
+    model_state = model
 
     def is_kernel_or_embedding(path, leaf):
         # Identify 2D arrays that are likely model weights.
