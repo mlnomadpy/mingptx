@@ -22,6 +22,7 @@ class TransformerBlock(nnx.Module):
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
         )
+        self.dropout1 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
 
         self.non_linear1 = YatNMN(
             in_features=config.embed_dim,
