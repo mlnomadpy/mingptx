@@ -5,7 +5,7 @@
 # bash train.sh --model_name "micro-gpt" --num_transformer_blocks 1
 
 # Default model_name if not provided
-MODEL_NAME=${1:-"mini-gpt"}
+MODEL_NAME=${1:-"micro-aethergpt"}
 
 python src/train.py \
     --model_name "$MODEL_NAME" \

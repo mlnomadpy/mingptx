@@ -18,3 +18,4 @@ def create_model(name: str, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
 
 # Import models to register them
 from models import gpt 
+from models.aether import aethergpt
