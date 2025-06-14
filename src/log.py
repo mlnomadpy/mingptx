@@ -17,6 +17,7 @@ class Logger:
                 wandb.log(log_data)
 
     def log_metrics(self, metrics, step):
+        print_str = f"Step {step}: "
         log_dict = {}
         for k, v in metrics.items():
             # Ensure value is a number before formatting
