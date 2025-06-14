@@ -1,6 +1,8 @@
 import wandb
 import matplotlib.pyplot as plt
 import jax.tree_util as jtu
+import jax.numpy as jnp
+import flax.nnx as nnx
 
 class Logger:
     def __init__(self, project_name, config, use_wandb=True):
@@ -81,4 +83,43 @@ def flatten_for_logging(pytree, prefix='grads'):
             log_key = f"{prefix}/{format_key(path)}"
             flat_metrics[log_key] = value.item()
             
-    return flat_metrics 
+    return flat_metrics
+
+def get_kernel_determinants(model: nnx.Module):
+    """Calculates the log-abs-determinant of the Gramian matrix (kernel.T @ kernel) for kernel weights."""
+    model_state = nnx.state(model)
+
+    def is_kernel_or_embedding(path, leaf):
+        # Identify 2D arrays that are likely model weights.
+        if not (isinstance(leaf, jnp.ndarray) and leaf.ndim == 2):
+            return False
+        
+        last_key = path[-1]
+        key_name = ""
+        if isinstance(last_key, jtu.GetAttrKey):
+            key_name = last_key.name
+        elif isinstance(last_key, jtu.DictKey):
+            key_name = last_key.key
+        
+        return 'kernel' in str(key_name) or 'embedding' in str(key_name)
+
+    def calculate_slogdet(leaf):
+        if leaf is None:
+            return None
+        
+        # For non-square matrices M, det(M.T @ M) gives the squared volume of the parallelepiped
+        # spanned by the columns of M. Using slogdet for numerical stability.
+        gramian = leaf.T @ leaf
+        _sign, logabsdet = jnp.linalg.slogdet(gramian)
+        return logabsdet
+
+    # Create a PyTree containing only the kernel weights, with `None` elsewhere.
+    kernel_weights = jtu.tree_map_with_path(
+        lambda path, leaf: leaf if is_kernel_or_embedding(path, leaf) else None,
+        model_state
+    )
+
+    # Calculate the log-abs-determinant for each kernel weight.
+    determinants = jtu.tree_map(calculate_slogdet, kernel_weights)
+    
+    return determinants 
