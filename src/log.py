@@ -95,17 +95,19 @@ def get_key_name_from_path_entry(key_entry):
         return str(key_entry.idx)
     return str(key_entry)
 
-def get_flat_determinants(model: nnx.Module):
+def get_flat_determinants(model: nnx.Module, debug: bool = False):
     """
     Calculates the log-abs-determinant of the Gramian matrix for kernel and embedding weights
     and returns them as a flat dictionary for logging.
     """
-    print("\n[Debug] Inside get_flat_determinants...")
+    if debug:
+        print("\n[Debug] Inside get_flat_determinants...")
     model_state = nnx.state(model)
     flat_determinants = {}
     
     leaves, _ = jtu.tree_flatten_with_path(model_state)
-    print(f"[Debug] Found {len(leaves)} leaves in model state.")
+    if debug:
+        print(f"[Debug] Found {len(leaves)} leaves in model state.")
     
     for path, leaf in leaves:
         path_str_for_debug = ".".join(get_key_name_from_path_entry(p) for p in path)
@@ -114,10 +116,12 @@ def get_flat_determinants(model: nnx.Module):
         if isinstance(leaf, jnp.ndarray) and leaf.ndim == 2 and len(path) >= 2:
             # The parameter name ('kernel', 'embedding') is typically the second to last key
             key_to_check = get_key_name_from_path_entry(path[-2]).lower()
-            print(f"[Debug] Found 2D array at path: {path_str_for_debug} | Key to check: '{key_to_check}' | Shape: {leaf.shape}")
+            if debug:
+                print(f"[Debug] Found 2D array at path: {path_str_for_debug} | Key to check: '{key_to_check}' | Shape: {leaf.shape}")
             
             if 'kernel' in key_to_check or 'embedding' in key_to_check:
-                print(f"  -> MATCH FOUND for '{key_to_check}'. Calculating determinant.")
+                if debug:
+                    print(f"  -> MATCH FOUND for '{key_to_check}'. Calculating determinant.")
                 gramian = leaf.T @ leaf
                 gramian += jnp.eye(gramian.shape[0]) * 1e-8
                 _sign, logabsdet = jnp.linalg.slogdet(gramian)
@@ -126,10 +130,11 @@ def get_flat_determinants(model: nnx.Module):
                 
                 flat_determinants[log_key] = logabsdet.item()
     
-    if not flat_determinants:
-        print("[Debug] WARNING: No kernel or embedding weights were matched. Determinant dict is empty.")
-    else:
-        print(f"[Debug] Calculated determinants: {flat_determinants}")
-    print("[Debug] Exiting get_flat_determinants.\n")
+    if debug:
+        if not flat_determinants:
+            print("[Debug] WARNING: No kernel or embedding weights were matched. Determinant dict is empty.")
+        else:
+            print(f"[Debug] Calculated determinants: {flat_determinants}")
+        print("[Debug] Exiting get_flat_determinants.\n")
         
     return flat_determinants 

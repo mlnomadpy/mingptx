@@ -52,6 +52,7 @@ def parse_args():
     parser.add_argument("--text_log_interval", type=int, default=default_config.train_config.text_log_interval, help="Interval for logging generated text.")
     parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.use_wandb, help="Whether to use wandb for logging.")
     parser.add_argument("--checkpoint_dir", type=str, default=default_config.train_config.checkpoint_dir, help="Directory to save checkpoints.")
+    parser.add_argument("--debug", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.debug, help="Enable or disable debug prints.")
     
     args = parser.parse_args()
     
@@ -77,7 +78,8 @@ def parse_args():
             log_interval=args.log_interval,
             text_log_interval=args.text_log_interval,
             use_wandb=args.use_wandb,
-            checkpoint_dir=args.checkpoint_dir
+            checkpoint_dir=args.checkpoint_dir,
+            debug=args.debug
         )
     )
     return config
@@ -165,7 +167,7 @@ def main():
                 flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
                 log_metrics.update(flat_grad_norms)
 
-                flat_determinants = get_flat_determinants(model)
+                flat_determinants = get_flat_determinants(model, debug=config.train_config.debug)
                 log_metrics.update(flat_determinants)
                 
                 logger.log_metrics(log_metrics, step=step + 1)

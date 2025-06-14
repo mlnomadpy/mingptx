@@ -17,4 +17,5 @@ python src/train.py \
     --log_interval 1 \
     --text_log_interval 200 \
     --use_wandb True \
-    --checkpoint_dir "checkpoints" 
+    --checkpoint_dir "checkpoints" \
+    --debug False 

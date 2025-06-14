@@ -25,7 +25,8 @@ class TrainConfig:
     text_log_interval: int = 200
     use_wandb: bool = True
     checkpoint_dir: str = 'checkpoints'
-    
+    debug: bool = False
+
 @dataclass
 class ProjectConfig:
     model_config: ModelConfig = field(default_factory=ModelConfig)
