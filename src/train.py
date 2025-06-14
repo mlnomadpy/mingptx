@@ -168,7 +168,7 @@ def main():
                 metrics_manager.reset()
 
                 elapsed_time = time.time() - start_time
-                print(f"Step {step + 1}, Loss: {loss_value}, Elapsed Time: {elapsed_time:.2f} seconds")
+                # print(f"Step {step + 1}, Loss: {loss_value}, Elapsed Time: {elapsed_time:.2f} seconds")
                 
                 start_time = time.time()
             step += 1
