@@ -13,7 +13,7 @@ import argparse
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
 from model import MiniGPT
-from logging import Logger, visualize_and_log_loss, flatten_for_logging
+from log import Logger, visualize_and_log_loss, flatten_for_logging
 
 def setup_mesh():
     devices = jax.devices()
