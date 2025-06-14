@@ -11,6 +11,7 @@ class Logger:
             wandb.init(project=project_name, config=config)
 
     def log_text(self, key, text, step=None):
+        print(f"{key}:\n{text}\n")
         if self.use_wandb:
             log_data = {key: text}
             if step is not None:
@@ -133,7 +134,7 @@ def get_flat_determinants(model: nnx.Module, debug: bool = False):
                 
                 log_key = f"determinants/{path_str_for_debug}"
                 
-                flat_determinants[log_key] = logabsdet.item()
+                flat_determinants[log_key] = jnp.abs(logabsdet.item())
     
     if debug:
         if not flat_determinants:
