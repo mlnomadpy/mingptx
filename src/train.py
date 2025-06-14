@@ -110,6 +110,12 @@ def main():
     rngs = nnx.Rngs(0)
     model = create_model(config.model_config.model_name, config.model_config, mesh, rngs=rngs)
     
+    # Count trainable parameters
+    params = nnx.state(model, nnx.Param)
+    num_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
+    print(f"Number of model parameters: {num_params / 1e6:.2f}M")
+    logger.log_metrics({'num_params': num_params}, step=0)
+
     # Optimizer
     optimizer = nnx.Optimizer(model, optax.adam(config.train_config.learning_rate))
     

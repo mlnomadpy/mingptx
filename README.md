@@ -17,9 +17,18 @@ A modular and extensible implementation of a mini-GPT, powered by JAX and Flax. 
 mingptx/
 ├── src/
 │   ├── train.py          # Main training script
-│   ├── model.py          # GPT model definition
+│   ├── model.py          # Model loader
 │   ├── dataset.py        # Data loading and preprocessing
-│   └── config.py         # Configuration for model, data, and training
+│   ├── config.py         # Configuration for model, data, and training
+│   ├── log.py            # Logging utilities
+│   └── models/           # GPT model implementations
+│       ├── gpt.py        # Base GPT model
+│       ├── linear/
+│       │   ├── base.py
+│       │   └── mingpt.py
+│       └── aether/
+│           ├── base.py
+│           └── aethergpt.py
 ├── train.sh              # Example script to run training
 └── README.md
 ```
