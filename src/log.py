@@ -112,9 +112,7 @@ def get_flat_determinants(model: nnx.Module, debug: bool = False):
     for path, leaf in leaves:
         path_str_for_debug = ".".join(get_key_name_from_path_entry(p) for p in path)
         
-        # Check for 2D arrays and that the path is long enough to have a parent key
         if isinstance(leaf, jnp.ndarray) and leaf.ndim == 2 and len(path) >= 2:
-            # The parameter name ('kernel', 'embedding') is typically the second to last key
             key_to_check = get_key_name_from_path_entry(path[-2]).lower()
             if debug:
                 print(f"[Debug] Found 2D array at path: {path_str_for_debug} | Key to check: '{key_to_check}' | Shape: {leaf.shape}")
@@ -122,7 +120,14 @@ def get_flat_determinants(model: nnx.Module, debug: bool = False):
             if 'kernel' in key_to_check or 'embedding' in key_to_check:
                 if debug:
                     print(f"  -> MATCH FOUND for '{key_to_check}'. Calculating determinant.")
-                gramian = leaf.T @ leaf
+                
+                # Use the smaller dimension to create the Gramian matrix to avoid memory issues.
+                m, n = leaf.shape
+                if m > n:
+                    gramian = leaf.T @ leaf
+                else:
+                    gramian = leaf @ leaf.T
+
                 gramian += jnp.eye(gramian.shape[0]) * 1e-8
                 _sign, logabsdet = jnp.linalg.slogdet(gramian)
                 
