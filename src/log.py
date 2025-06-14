@@ -9,7 +9,6 @@ class Logger:
             wandb.init(project=project_name, config=config)
 
     def log_text(self, key, text, step=None):
-        print(f"{key}:\n{text}\n")
         if self.use_wandb:
             log_data = {key: text}
             if step is not None:
@@ -18,7 +17,6 @@ class Logger:
                 wandb.log(log_data)
 
     def log_metrics(self, metrics, step):
-        print_str = f"Step {step}: "
         log_dict = {}
         for k, v in metrics.items():
             # Ensure value is a number before formatting
@@ -28,7 +26,7 @@ class Logger:
                 print_str += f"{k}: {v} | "
             log_dict[k] = v
         
-        print(print_str.strip().strip('|').strip())
+        # print(print_str.strip().strip('|').strip())
         
         if self.use_wandb:
             wandb.log(log_dict, step=step)
