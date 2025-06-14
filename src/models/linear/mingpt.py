@@ -3,11 +3,11 @@ from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 
 from config import ModelConfig
 from model import register_model
-from models.aether.base import TransformerBlock
+from models.linear.base import TransformerBlock
 from models.gpt import GPT, TokenAndPositionEmbedding
-from nmn.nnx.nmn import YatNMN
 
-@register_model("mini-aethergpt")
+
+@register_model("mini-gpt")
 class MiniGPT(GPT):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
         super().__init__(config, mesh, rngs=rngs)
@@ -15,11 +15,10 @@ class MiniGPT(GPT):
         self.transformer_blocks = [
             TransformerBlock(config, mesh, rngs=rngs) for _ in range(config.num_transformer_blocks)
         ]
-        self.output_layer = YatNMN(
+        self.output_layer = nnx.Linear(
             in_features=config.embed_dim,
             out_features=config.vocab_size,
             kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
-            alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
         )
@@ -30,17 +29,16 @@ class MiniGPT(GPT):
             x = transformer_block(x, training=training)
         return self.output_layer(x)
 
-@register_model("micro-aethergpt")
+@register_model("micro-gpt")
 class MicroGPT(GPT):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
         super().__init__(config, mesh, rngs=rngs)
         self.embedding_layer = TokenAndPositionEmbedding(config, rngs=rngs)
         self.transformer_block = TransformerBlock(config, mesh, rngs=rngs)
-        self.output_layer = YatNMN(
+        self.output_layer = nnx.Linear(
             in_features=config.embed_dim,
             out_features=config.vocab_size,
             kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
-            alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
         )

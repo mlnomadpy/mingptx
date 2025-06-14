@@ -17,5 +17,5 @@ def create_model(name: str, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
     return _MODELS[name](config, mesh, rngs=rngs)
 
 # Import models to register them
-from models import gpt 
+from models.linear import mingpt 
 from models.aether import aethergpt
