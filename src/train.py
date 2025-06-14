@@ -8,13 +8,12 @@ import orbax.checkpoint as orbax
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental import mesh_utils
 from transformers import AutoTokenizer
-import wandb
-import matplotlib.pyplot as plt
 import argparse
 
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
 from model import MiniGPT
+from logging import Logger, visualize_and_log_loss
 
 def setup_mesh():
     devices = jax.devices()
@@ -50,6 +49,7 @@ def parse_args():
     parser.add_argument("--num_epochs", type=int, default=default_config.train_config.num_epochs, help="Number of training epochs.")
     parser.add_argument("--learning_rate", type=float, default=default_config.train_config.learning_rate, help="Learning rate for the optimizer.")
     parser.add_argument("--log_interval", type=int, default=default_config.train_config.log_interval, help="Interval for logging metrics.")
+    parser.add_argument("--text_log_interval", type=int, default=default_config.train_config.text_log_interval, help="Interval for logging generated text.")
     parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.use_wandb, help="Whether to use wandb for logging.")
     parser.add_argument("--checkpoint_dir", type=str, default=default_config.train_config.checkpoint_dir, help="Directory to save checkpoints.")
     
@@ -75,6 +75,7 @@ def parse_args():
             num_epochs=args.num_epochs,
             learning_rate=args.learning_rate,
             log_interval=args.log_interval,
+            text_log_interval=args.text_log_interval,
             use_wandb=args.use_wandb,
             checkpoint_dir=args.checkpoint_dir
         )
@@ -85,12 +86,11 @@ def main():
     config = parse_args()
     mesh = setup_mesh()
 
-    if config.train_config.use_wandb:
-        wandb.init(project="mingptx", config={
-            "model": config.model_config,
-            "data": config.data_config,
-            "train": config.train_config
-        })
+    logger = Logger(project_name="mingptx", config={
+        "model": config.model_config,
+        "data": config.data_config,
+        "train": config.train_config
+    }, use_wandb=config.train_config.use_wandb)
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(config.data_config.tokenizer_name)
@@ -108,7 +108,7 @@ def main():
     optimizer = nnx.Optimizer(model, optax.adam(config.train_config.learning_rate))
     
     # Metrics
-    metrics = nnx.MultiMetric(loss=nnx.metrics.Average('loss'))
+    metrics_manager = nnx.MultiMetric(loss=nnx.metrics.Average('loss'))
     
     # Loss function
     def loss_fn(mdl, batch):
@@ -120,8 +120,8 @@ def main():
     @nnx.jit
     def train_step(mdl, opt, mets, b):
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-        (loss, logits), grads = grad_fn(mdl, b)
-        mets.update(loss=loss, logits=logits, labels=b[1])
+        (loss, _), grads = grad_fn(mdl, b)
+        mets.update(loss=loss)
         opt.update(grads)
 
     # Initial text generation
@@ -131,9 +131,7 @@ def main():
         start_prompt=start_prompt,
         tokenizer=tokenizer
     )
-    print(f"Initial generated text:\n{generated_text}\n")
-    if config.train_config.use_wandb:
-        wandb.log({"generated_text_initial": generated_text})
+    logger.log_text("initial_generated_text", generated_text)
 
     # Training loop
     metrics_history = {'train_loss': []}
@@ -149,36 +147,33 @@ def main():
             input_batch = jnp.array(jnp.array(batch).T)
             target_batch = prep_target_batch(input_batch)
             
+            batch_data = (input_batch, target_batch)
             if mesh:
-                sharded_batch = jax.device_put((input_batch, target_batch), NamedSharding(mesh, P('batch', None)))
-                train_step(model, optimizer, metrics, sharded_batch)
-            else:
-                train_step(model, optimizer, metrics, (input_batch, target_batch))
+                batch_data = jax.device_put(batch_data, NamedSharding(mesh, P('batch', None)))
+            
+            train_step(model, optimizer, metrics_manager, batch_data)
 
             if (step + 1) % config.train_config.log_interval == 0:
-                computed_metrics = metrics.compute()
-                for metric, value in computed_metrics.items():
-                    metrics_history[f'train_{metric}'].append(value)
-                metrics.reset()
+                computed_metrics = metrics_manager.compute()
+                loss_value = computed_metrics['loss'].item()
+                metrics_history['train_loss'].append(loss_value)
+                logger.log_metrics({'train_loss': loss_value}, step=step + 1)
+                metrics_manager.reset()
 
                 elapsed_time = time.time() - start_time
-                loss_value = metrics_history['train_loss'][-1]
                 print(f"Step {step + 1}, Loss: {loss_value}, Elapsed Time: {elapsed_time:.2f} seconds")
                 
-                if config.train_config.use_wandb:
-                    wandb.log({"train_loss": loss_value, "step": step + 1, "elapsed_time": elapsed_time})
+                start_time = time.time()
+            step += 1
 
+            if (step + 1) % config.train_config.text_log_interval == 0:
                 generated_text = model.generate_text(
                     max_tokens=config.model_config.maxlen, 
                     start_prompt=start_prompt,
                     tokenizer=tokenizer
                 )
-                print(f"Generated text:\n{generated_text}\n")
-                if config.train_config.use_wandb:
-                    wandb.log({"generated_text": generated_text, "step": step + 1})
-                
-                start_time = time.time()
-            step += 1
+                logger.log_text("generated_text", generated_text, step=step + 1)
+                visualize_and_log_loss(metrics_history, logger, step=step + 1)
 
     # Final text generation
     final_text = model.generate_text(
@@ -186,19 +181,7 @@ def main():
         start_prompt=start_prompt,
         tokenizer=tokenizer
     )
-    print(f"Final generated text:\n{final_text}")
-    if config.train_config.use_wandb:
-        wandb.log({"final_generated_text": final_text})
-
-    # Visualize and save training loss
-    plt.plot(metrics_history['train_loss'])
-    plt.title('Training Loss')
-    plt.xlabel('Step')
-    plt.ylabel('Loss')
-    plt.savefig('training_loss.png')
-    if config.train_config.use_wandb:
-        wandb.log({"training_loss_plot": wandb.Image('training_loss.png')})
-    plt.show()
+    logger.log_text("final_generated_text", final_text, step=step)
 
     # Save checkpoint
     state = nnx.state(model)
@@ -207,8 +190,8 @@ def main():
     os.makedirs(save_dir, exist_ok=True)
     checkpointer.save(os.path.join(save_dir, 'model_checkpoint'), state)
     print(f"Checkpoint saved to {save_dir}")
-    if config.train_config.use_wandb:
-        wandb.finish()
+    
+    logger.finish()
 
 if __name__ == "__main__":
     main()

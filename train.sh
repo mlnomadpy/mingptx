@@ -14,6 +14,7 @@ python src/train.py \
     --tokenizer_name "gpt2" \
     --num_epochs 2 \
     --learning_rate 1e-4 \
-    --log_interval 200 \
+    --log_interval 1 \
+    --text_log_interval 200 \
     --use_wandb True \
     --checkpoint_dir "checkpoints" 

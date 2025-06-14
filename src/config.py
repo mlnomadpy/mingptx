@@ -21,7 +21,8 @@ class DataConfig:
 class TrainConfig:
     num_epochs: int = 1
     learning_rate: float = 1e-3
-    log_interval: int = 200
+    log_interval: int = 1
+    text_log_interval: int = 200
     use_wandb: bool = True
     checkpoint_dir: str = 'checkpoints'
     
