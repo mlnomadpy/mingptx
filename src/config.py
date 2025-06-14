@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 @dataclass
 class ModelConfig:
+    model_name: str = "mini-gpt"
     maxlen: int = 256
     vocab_size: int = 50257  # GPT-2 vocab size
     embed_dim: int = 256

@@ -1,6 +1,14 @@
 #!/bin/bash
 # Example of running the training script with all parameters configured from the command line.
+
+# To train micro-gpt, for example, you can run:
+# bash train.sh --model_name "micro-gpt" --num_transformer_blocks 1
+
+# Default model_name if not provided
+MODEL_NAME=${1:-"mini-gpt"}
+
 python src/train.py \
+    --model_name "$MODEL_NAME" \
     --maxlen 256 \
     --vocab_size 50257 \
     --embed_dim 256 \

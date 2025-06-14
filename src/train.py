@@ -12,7 +12,7 @@ import argparse
 
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
-from model import MiniGPT
+from model import create_model
 from log import Logger, visualize_and_log_loss, flatten_for_logging, get_flat_determinants
 
 def setup_mesh():
@@ -31,6 +31,7 @@ def parse_args():
     default_config = ProjectConfig()
 
     # Model args
+    parser.add_argument("--model_name", type=str, default="mini-gpt", help="Name of the model to train.")
     parser.add_argument("--maxlen", type=int, default=default_config.model_config.maxlen, help="Maximum sequence length.")
     parser.add_argument("--vocab_size", type=int, default=default_config.model_config.vocab_size, help="Vocabulary size.")
     parser.add_argument("--embed_dim", type=int, default=default_config.model_config.embed_dim, help="Embedding dimensionality.")
@@ -58,6 +59,7 @@ def parse_args():
     
     config = ProjectConfig(
         model_config=ModelConfig(
+            model_name=args.model_name,
             maxlen=args.maxlen,
             vocab_size=args.vocab_size,
             embed_dim=args.embed_dim,
@@ -104,7 +106,7 @@ def main():
 
     # Create model
     rngs = nnx.Rngs(0)
-    model = MiniGPT(config.model_config, mesh, rngs=rngs)
+    model = create_model(config.model_config.model_name, config.model_config, mesh, rngs=rngs)
     
     # Optimizer
     optimizer = nnx.Optimizer(model, optax.adam(config.train_config.learning_rate))
