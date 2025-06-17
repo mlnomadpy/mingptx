@@ -48,8 +48,7 @@ class TransformerBlock(nnx.Module):
     def __call__(self, inputs, training: bool = False):
         _, seq_len, _ = inputs.shape
         mask = causal_attention_mask(seq_len)
-        attention_output = self.mha(inputs_q=inputs, mask=mask, decode=False)
-        attention_output = self.dropout1(attention_output, deterministic=not training)
+        attention_output = self.mha(inputs_q=inputs, mask=mask, decode=False, deterministic=not training)
         out1 = inputs + attention_output
         
         ffn_output = self.non_linear1(out1)
