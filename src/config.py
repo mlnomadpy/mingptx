@@ -10,6 +10,7 @@ class ModelConfig:
     feed_forward_dim: int = 256
     num_transformer_blocks: int = 8
     dropout_rate: float = 0.1
+    dropconnect_rate: float = 0.1
     use_dropconnect: bool = True
 
 @dataclass

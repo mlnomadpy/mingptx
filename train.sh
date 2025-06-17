@@ -16,6 +16,7 @@ python src/train.py \
     --feed_forward_dim 256 \
     --num_transformer_blocks 8 \
     --dropout_rate 0.1 \
+    --dropconnect_rate 0.1 \
     --use_dropconnect True \
     --dataset_name "roneneldan/TinyStories" \
     --split "train" \
