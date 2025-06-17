@@ -1,7 +1,7 @@
 import optax
 import flax.nnx as nnx
 
-def create_optimizer(model: nnx.graph_def.GraphDef, config):
+def create_optimizer(model, config):
     """
     Creates an optimizer based on the provided configuration.
     Supports 'adam' and 'adamw'.
