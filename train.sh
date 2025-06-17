@@ -6,9 +6,11 @@
 
 # Default model_name if not provided
 MODEL_NAME=${1:-"micro-aethergpt"}
+OPTIMIZER_NAME=${2:-"adamw"}
 
 python src/train.py \
     --model_name "$MODEL_NAME" \
+    --optimizer_name "$OPTIMIZER_NAME" \
     --maxlen 256 \
     --vocab_size 50257 \
     --embed_dim 256 \
@@ -24,6 +26,7 @@ python src/train.py \
     --tokenizer_name "gpt2" \
     --num_epochs 2 \
     --learning_rate 1e-4 \
+    --weight_decay 1e-5 \
     --log_interval 1 \
     --text_log_interval 200 \
     --use_wandb True \

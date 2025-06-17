@@ -64,6 +64,19 @@ bash train.sh
 
 This will start the training with the default configuration specified in `src/config.py`. You can easily modify the configurations in this file to experiment with different hyperparameters, datasets, or model architectures.
 
+### Optimizer Configuration
+
+You can select and configure the optimizer through command-line arguments or by modifying the `train.sh` script. The supported optimizers are `adam` and `adamw`.
+
+-   `--optimizer_name`: Choose the optimizer (e.g., `'adam'`, `'adamw'`).
+-   `--learning_rate`: Set the learning rate.
+-   `--weight_decay`: Set the weight decay (used with `adamw`).
+
+Example `train.sh` usage:
+```bash
+bash train.sh micro-gpt adamw
+```
+
 ## Weights & Biases
 
 To use Weights & Biases for experiment tracking, make sure you have an account and are logged in. The training script will automatically log metrics, generated text samples, and training plots to your `wandb` dashboard. You can disable this feature by setting `use_wandb = False` in `src/config.py`.

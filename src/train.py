@@ -13,6 +13,7 @@ import argparse
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
 from model import create_model
+from optimizer import create_optimizer
 from log import Logger, visualize_and_log_loss, flatten_for_logging, get_flat_determinants
 
 def setup_mesh():
@@ -49,8 +50,10 @@ def parse_args():
     parser.add_argument("--tokenizer_name", type=str, default=default_config.data_config.tokenizer_name, help="Tokenizer to use.")
 
     # Train args
+    parser.add_argument("--optimizer_name", type=str, default=default_config.train_config.optimizer_name, help="Optimizer to use (e.g., 'adam', 'adamw').")
     parser.add_argument("--num_epochs", type=int, default=default_config.train_config.num_epochs, help="Number of training epochs.")
     parser.add_argument("--learning_rate", type=float, default=default_config.train_config.learning_rate, help="Learning rate for the optimizer.")
+    parser.add_argument("--weight_decay", type=float, default=default_config.train_config.weight_decay, help="Weight decay for the optimizer.")
     parser.add_argument("--log_interval", type=int, default=default_config.train_config.log_interval, help="Interval for logging metrics.")
     parser.add_argument("--text_log_interval", type=int, default=default_config.train_config.text_log_interval, help="Interval for logging generated text.")
     parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.use_wandb, help="Whether to use wandb for logging.")
@@ -79,8 +82,10 @@ def parse_args():
             tokenizer_name=args.tokenizer_name
         ),
         train_config=TrainConfig(
+            optimizer_name=args.optimizer_name,
             num_epochs=args.num_epochs,
             learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
             log_interval=args.log_interval,
             text_log_interval=args.text_log_interval,
             use_wandb=args.use_wandb,
@@ -119,7 +124,7 @@ def main():
     logger.log_metrics({'num_params': num_params}, step=0)
 
     # Optimizer
-    optimizer = nnx.Optimizer(model, optax.adam(config.train_config.learning_rate))
+    optimizer = create_optimizer(model, config)
     
     # Metrics
     metrics_manager = nnx.MultiMetric(loss=nnx.metrics.Average('loss'))

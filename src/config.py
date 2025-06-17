@@ -22,8 +22,10 @@ class DataConfig:
 
 @dataclass
 class TrainConfig:
+    optimizer_name: str = "adam"
     num_epochs: int = 1
     learning_rate: float = 1e-3
+    weight_decay: float = 1e-4
     log_interval: int = 1
     text_log_interval: int = 200
     use_wandb: bool = True
