@@ -134,7 +134,7 @@ def get_flat_determinants(model: nnx.Module, debug: bool = False):
                 
                 log_key = f"determinants/{path_str_for_debug}"
                 
-                flat_determinants[log_key] = jnp.abs(logabsdet.item())
+                flat_determinants[log_key] = logabsdet.item()
     
     if debug:
         if not flat_determinants:
