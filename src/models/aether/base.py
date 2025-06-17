@@ -45,6 +45,9 @@ class TransformerBlock(nnx.Module):
             rngs=rngs
         )
 
+        self.dropout2 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
+
+
     def __call__(self, inputs, training: bool = False):
         _, seq_len, _ = inputs.shape
         mask = causal_attention_mask(seq_len)
@@ -54,4 +57,5 @@ class TransformerBlock(nnx.Module):
         
         ffn_output = self.non_linear1(out1)
         ffn_output = self.non_linear2(ffn_output)
+        ffn_output = self.dropout2(ffn_output, deterministic=not training)
         return out1 + ffn_output
