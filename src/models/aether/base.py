@@ -26,16 +26,7 @@ class TransformerBlock(nnx.Module):
 
         self.non_linear1 = YatNMN(
             in_features=config.embed_dim,
-            out_features=config.feed_forward_dim,
-            use_dropconnect=config.use_dropconnect,
-            drop_rate=config.dropconnect_rate,
-            kernel_init=nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model'))),
-            alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
-            bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
-            rngs=rngs
-        )
-        self.non_linear2 = YatNMN(
-            in_features=config.feed_forward_dim,
+            # out_features=config.feed_forward_dim,
             out_features=config.embed_dim,
             use_dropconnect=config.use_dropconnect,
             drop_rate=config.dropconnect_rate,
@@ -44,6 +35,16 @@ class TransformerBlock(nnx.Module):
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
         )
+        # self.non_linear2 = YatNMN(
+        #     in_features=config.feed_forward_dim,
+        #     out_features=config.embed_dim,
+        #     use_dropconnect=config.use_dropconnect,
+        #     drop_rate=config.dropconnect_rate,
+        #     kernel_init=nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model'))),
+        #     alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
+        #     bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
+        #     rngs=rngs
+        # )
 
         self.dropout2 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
 
@@ -56,6 +57,6 @@ class TransformerBlock(nnx.Module):
         out1 = inputs + attention_output
         
         ffn_output = self.non_linear1(out1)
-        ffn_output = self.non_linear2(ffn_output)
+        # ffn_output = self.non_linear2(ffn_output)
         ffn_output = self.dropout2(ffn_output, deterministic=not training)
         return out1 + ffn_output
