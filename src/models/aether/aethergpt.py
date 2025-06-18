@@ -18,7 +18,7 @@ class MiniGPT(GPT):
         self.output_layer = YatNMN(
             in_features=config.embed_dim,
             out_features=config.vocab_size,
-            kernel_init=nnx.with_partitioning(nnx.initializers.he_uniform(), NamedSharding(mesh, P(None, 'model'))),
+            kernel_init=nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model'))),
             alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
@@ -39,7 +39,7 @@ class MicroGPT(GPT):
         self.output_layer = YatNMN(
             in_features=config.embed_dim,
             out_features=config.vocab_size,
-            kernel_init=nnx.with_partitioning(nnx.initializers.he_uniform(), NamedSharding(mesh, P(None, 'model'))),
+            kernel_init=nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model'))),
             alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
