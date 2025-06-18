@@ -122,19 +122,25 @@ def get_flat_determinants(model: nnx.Module, debug: bool = False):
                 if debug:
                     print(f"  -> MATCH FOUND for '{key_to_check}'. Calculating determinant.")
                 
-                # Use the smaller dimension to create the Gramian matrix to avoid memory issues.
                 m, n = leaf.shape
-                if m > n:
-                    gramian = leaf.T @ leaf
+                
+                # For a square matrix, compute determinant directly.
+                if m == n:
+                    matrix_to_use = leaf
+                # For non-square matrices, use the Gramian.
                 else:
-                    gramian = leaf @ leaf.T
+                    # Use the smaller dimension to create the Gramian matrix to avoid memory issues.
+                    if m > n:
+                        matrix_to_use = leaf.T @ leaf
+                    else:
+                        matrix_to_use = leaf @ leaf.T
 
-                gramian += jnp.eye(gramian.shape[0]) * 1e-8
-                _sign, logabsdet = jnp.linalg.slogdet(gramian)
+                matrix_to_use += jnp.eye(matrix_to_use.shape[0]) * 1e-8
+                det_value = jnp.linalg.det(matrix_to_use)
                 
                 log_key = f"determinants/{path_str_for_debug}"
                 
-                flat_determinants[log_key] = logabsdet.item()
+                flat_determinants[log_key] = det_value.item()
     
     if debug:
         if not flat_determinants:

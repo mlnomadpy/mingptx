@@ -29,7 +29,7 @@ class TransformerBlock(nnx.Module):
             out_features=config.feed_forward_dim,
             use_dropconnect=config.use_dropconnect,
             drop_rate=config.dropconnect_rate,
-            kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
+            kernel_init=nnx.with_partitioning(nnx.initializers.he_uniform(), NamedSharding(mesh, P(None, 'model'))),
             alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
@@ -39,7 +39,7 @@ class TransformerBlock(nnx.Module):
             out_features=config.embed_dim,
             use_dropconnect=config.use_dropconnect,
             drop_rate=config.dropconnect_rate,
-            kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
+            kernel_init=nnx.with_partitioning(nnx.initializers.he_uniform(), NamedSharding(mesh, P(None, 'model'))),
             alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
             bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
             rngs=rngs
