@@ -238,8 +238,12 @@ def main():
     test_rngs = nnx.Rngs(1)
     test_model = create_model(config.model_config.model_name, config.model_config, mesh, rngs=test_rngs)
     
-    # Load the checkpoint
-    restored_state = checkpointer.restore(checkpoint_path)
+    # Create a template state object with the same structure as the model to be restored
+    # This ensures that the sharding information is correctly applied during restoration
+    abstract_state = jax.eval_shape(lambda: nnx.state(test_model, nnx.Param))
+    
+    # Load the checkpoint using the abstract state as a template
+    restored_state = checkpointer.restore(checkpoint_path, item=abstract_state)
     
     # Update the new model with the loaded state
     nnx.update(test_model, restored_state)
