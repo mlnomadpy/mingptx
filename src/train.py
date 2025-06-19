@@ -223,7 +223,7 @@ def main():
     logger.log_text("final_generated_text", final_text, step=step)
 
     # Save checkpoint
-    state = nnx.state(model)
+    state = nnx.state(model, nnx.Param)
     checkpointer = orbax.PyTreeCheckpointer()
     save_dir = os.path.abspath(config.train_config.checkpoint_dir)
     os.makedirs(save_dir, exist_ok=True)
