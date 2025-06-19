@@ -11,10 +11,14 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
     - Tokenizes and batches data efficiently.
     - Returns a tf.data.Dataset.
     """
+    # streaming=True returns an IterableDataset
     hf_dataset = load_dataset(d_config.dataset_name, split=d_config.split, streaming=True)
 
+    # Shuffle the dataset. For streaming, this uses a buffer of elements.
+    hf_dataset = hf_dataset.shuffle(seed=42, buffer_size=10_000)
+
     def tokenize_function(examples):
-        # The tokenizer now returns TensorFlow tensors.
+        # The tokenizer returns TensorFlow tensors.
         return tokenizer(
             examples["text"],
             truncation=True,
@@ -23,19 +27,31 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
             return_tensors="tf",
         )
 
+    # The map function is applied on-the-fly to batches of examples.
     tokenized_dataset = hf_dataset.map(tokenize_function, batched=True)
     
-    # We only need 'input_ids' for the model input.
-    # The 'attention_mask' is also available if your model uses it.
+    # We only need 'input_ids' for the model, so we remove other columns.
+    # The training script expects batches with 'input_ids'.
     tokenized_dataset = tokenized_dataset.remove_columns(["text", "attention_mask"])
 
-    # Convert to a tf.data.Dataset
-    tf_dataset = tokenized_dataset.to_tf_dataset(
-        columns=["input_ids"],
-        batch_size=d_config.batch_size,
-        shuffle=True, # Shuffle the dataset. For streaming, this uses a buffer.
-        prefetch=tf.data.experimental.AUTOTUNE,
-        drop_remainder=True,
+    # Create a tf.data.Dataset from the Hugging Face IterableDataset.
+    def data_generator():
+        for record in tokenized_dataset:
+            yield record
+
+    # The output from the generator will be a dictionary. The training loop
+    # expects 'input_ids'.
+    output_signature = {
+        'input_ids': tf.TensorSpec(shape=(m_config.maxlen,), dtype=tf.int64)
+    }
+
+    tf_dataset = tf.data.Dataset.from_generator(
+        data_generator,
+        output_signature=output_signature
     )
+
+    # Batch and prefetch the dataset for performance.
+    tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
+    tf_dataset = tf_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     
     return tf_dataset 
