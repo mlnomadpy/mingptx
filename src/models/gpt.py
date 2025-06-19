@@ -18,7 +18,7 @@ class TokenAndPositionEmbedding(nnx.Module):
         return token_embedding + position_embedding
 
 class GPT(nnx.Module):
-    def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
+    def __init__(self, config: ModelConfig, mesh: Mesh, *):
         self.config = config
         self.mesh = mesh
 
