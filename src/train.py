@@ -227,8 +227,33 @@ def main():
     checkpointer = orbax.PyTreeCheckpointer()
     save_dir = os.path.abspath(config.train_config.checkpoint_dir)
     os.makedirs(save_dir, exist_ok=True)
-    checkpointer.save(os.path.join(save_dir, 'model_checkpoint'), state)
-    print(f"Checkpoint saved to {save_dir}")
+    checkpoint_path = os.path.join(save_dir, 'model_checkpoint')
+    checkpointer.save(checkpoint_path, state)
+    print(f"Checkpoint saved to {checkpoint_path}")
+
+    # Load the model from the checkpoint to verify it
+    print("\nVerifying checkpoint by loading and generating text...")
+    
+    # Create a new model instance for testing
+    test_rngs = nnx.Rngs(1)
+    test_model = create_model(config.model_config.model_name, config.model_config, mesh, rngs=test_rngs)
+    
+    # Load the checkpoint
+    restored_state = checkpointer.restore(checkpoint_path)
+    
+    # Update the new model with the loaded state
+    nnx.update(test_model, restored_state)
+    
+    # Generate text with the loaded model to verify
+    test_generated_text = test_model.generate_text(
+        max_tokens=config.model_config.maxlen,
+        start_prompt=start_prompt,
+        tokenizer=tokenizer
+    )
+    logger.log_text("test_generated_text", test_generated_text, step=step)
+    print("--- Text generated from loaded model ---")
+    print(test_generated_text)
+    print("--- Checkpoint verification complete ---")
     
     logger.finish()
 
