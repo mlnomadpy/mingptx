@@ -1,51 +1,41 @@
-import grain.python as pygrain
+import tensorflow as tf
 from datasets import load_dataset
 from transformers import AutoTokenizer
-from dataclasses import dataclass
 
 from config import DataConfig, ModelConfig, TrainConfig
 
-@dataclass
-class HFTextDataset:
-    hf_dataset: load_dataset
-    tokenizer: AutoTokenizer
-    maxlen: int
-
-    def __len__(self):
-        return len(self.hf_dataset)
-
-    def __getitem__(self, idx: int):
-        text = self.hf_dataset[idx]["text"]
-        encoding = self.tokenizer.encode(
-            text, 
-            truncation=True, 
-            max_length=self.maxlen, 
-            padding=False
-        )
-        
-        if self.tokenizer.pad_token_id is None:
-            pad_id = self.tokenizer.eos_token_id
-        else:
-            pad_id = self.tokenizer.pad_token_id
-
-        padded_encoding = encoding + [pad_id] * (self.maxlen - len(encoding))
-        return padded_encoding
-
 def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer: AutoTokenizer):
-    hf_dataset = load_dataset(d_config.dataset_name, split=d_config.split)
-    dataset = HFTextDataset(hf_dataset, tokenizer, m_config.maxlen)
+    """
+    Loads and prepares a text dataset for training with JAX.
+    - Uses streaming for large datasets.
+    - Tokenizes and batches data efficiently.
+    - Returns a tf.data.Dataset.
+    """
+    hf_dataset = load_dataset(d_config.dataset_name, split=d_config.split, streaming=True)
 
-    sampler = pygrain.IndexSampler(
-        num_records=len(dataset),
-        shuffle=True,
-        seed=42,
-        shard_options=pygrain.NoSharding(),
-        num_epochs=t_config.num_epochs,
-    )
+    def tokenize_function(examples):
+        # The tokenizer now returns TensorFlow tensors.
+        return tokenizer(
+            examples["text"],
+            truncation=True,
+            padding="max_length",
+            max_length=m_config.maxlen,
+            return_tensors="tf",
+        )
 
-    dataloader = pygrain.DataLoader(
-        data_source=dataset,
-        sampler=sampler,
-        operations=[pygrain.Batch(batch_size=d_config.batch_size, drop_remainder=True)],
+    tokenized_dataset = hf_dataset.map(tokenize_function, batched=True)
+    
+    # We only need 'input_ids' for the model input.
+    # The 'attention_mask' is also available if your model uses it.
+    tokenized_dataset = tokenized_dataset.remove_columns(["text", "attention_mask"])
+
+    # Convert to a tf.data.Dataset
+    tf_dataset = tokenized_dataset.to_tf_dataset(
+        columns=["input_ids"],
+        batch_size=d_config.batch_size,
+        shuffle=True, # Shuffle the dataset. For streaming, this uses a buffer.
+        prefetch=tf.data.experimental.AUTOTUNE,
+        drop_remainder=True,
     )
-    return dataloader 
+    
+    return tf_dataset 

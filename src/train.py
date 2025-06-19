@@ -156,21 +156,29 @@ def main():
 
     # Training loop
     metrics_history = {'train_loss': []}
-    prep_target_batch = jax.vmap(lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))))
+    # Correctly vmap over the batch dimension (axis 1) of (maxlen, batch_size) arrays
+    prep_target_batch = jax.vmap(
+        lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
+        in_axes=1, 
+        out_axes=1
+    )
     step = 0
 
     for epoch in range(config.train_config.num_epochs):
         start_time = time.time()
-        for batch in iter(text_dl):
-            if len(batch) % len(jax.devices()) != 0:
-                continue
+        for batch in text_dl.as_numpy_iterator():
+            # batch is a dict {'input_ids': array} with shape (batch_size, maxlen)
+            # The model expects (maxlen, batch_size), so we transpose.
+            input_batch = jnp.array(batch['input_ids']).T
             
-            input_batch = jnp.array(jnp.array(batch).T)
+            # Create target by shifting input
             target_batch = prep_target_batch(input_batch)
             
             batch_data = (input_batch, target_batch)
+            
             if mesh:
-                batch_data = jax.device_put(batch_data, NamedSharding(mesh, P('batch', None)))
+                # Shard the batch dimension (axis 1) across the 'batch' mesh axis
+                batch_data = jax.device_put(batch_data, NamedSharding(mesh, P(None, 'batch')))
             
             grad_norms = train_step(model, optimizer, metrics_manager, batch_data)
 
@@ -214,7 +222,7 @@ def main():
     logger.log_text("final_generated_text", final_text, step=step)
 
     # Save checkpoint
-    state = nnx.state(model, nnx.Param)
+    state = nnx.state(model)
     checkpointer = orbax.PyTreeCheckpointer()
     save_dir = os.path.abspath(config.train_config.checkpoint_dir)
     os.makedirs(save_dir, exist_ok=True)
