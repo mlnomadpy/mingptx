@@ -156,21 +156,29 @@ def main():
 
     # Training loop
     metrics_history = {'train_loss': []}
-    prep_target_batch = jax.vmap(lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))))
+    # Correctly vmap over the batch dimension (axis 1) of (maxlen, batch_size) arrays
+    prep_target_batch = jax.vmap(
+        lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
+        in_axes=1, 
+        out_axes=1
+    )
     step = 0
 
     for epoch in range(config.train_config.num_epochs):
         start_time = time.time()
-        for batch in iter(text_dl):
-            if len(batch) % len(jax.devices()) != 0:
-                continue
+        for batch in text_dl.as_numpy_iterator():
+            # batch is a dict {'input_ids': array} with shape (batch_size, maxlen)
+            # The model expects (maxlen, batch_size), so we transpose.
+            input_batch = jnp.array(batch['input_ids']).T
             
-            input_batch = jnp.array(jnp.array(batch).T)
+            # Create target by shifting input
             target_batch = prep_target_batch(input_batch)
             
             batch_data = (input_batch, target_batch)
+            
             if mesh:
-                batch_data = jax.device_put(batch_data, NamedSharding(mesh, P('batch', None)))
+                # Shard the batch dimension (axis 1) across the 'batch' mesh axis
+                batch_data = jax.device_put(batch_data, NamedSharding(mesh, P(None, 'batch')))
             
             grad_norms = train_step(model, optimizer, metrics_manager, batch_data)
 
@@ -179,7 +187,9 @@ def main():
                 loss_value = computed_metrics['loss'].item()
                 metrics_history['train_loss'].append(loss_value)
                 
-                log_metrics = {'train_loss': loss_value}
+                elapsed_time = time.time() - start_time
+                
+                log_metrics = {'train_loss': loss_value, 'elapsed_time': elapsed_time}
                 
                 flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
                 log_metrics.update(flat_grad_norms)
@@ -190,7 +200,6 @@ def main():
                 logger.log_metrics(log_metrics, step=step + 1)
                 metrics_manager.reset()
 
-                elapsed_time = time.time() - start_time
                 # print(f"Step {step + 1}, Loss: {loss_value}, Elapsed Time: {elapsed_time:.2f} seconds")
                 
                 start_time = time.time()
@@ -218,8 +227,37 @@ def main():
     checkpointer = orbax.PyTreeCheckpointer()
     save_dir = os.path.abspath(config.train_config.checkpoint_dir)
     os.makedirs(save_dir, exist_ok=True)
-    checkpointer.save(os.path.join(save_dir, 'model_checkpoint'), state)
-    print(f"Checkpoint saved to {save_dir}")
+    checkpoint_path = os.path.join(save_dir, 'model_checkpoint')
+    checkpointer.save(checkpoint_path, state)
+    print(f"Checkpoint saved to {checkpoint_path}")
+
+    # Load the model from the checkpoint to verify it
+    print("\nVerifying checkpoint by loading and generating text...")
+    
+    # Create a new model instance for testing
+    test_rngs = nnx.Rngs(1)
+    test_model = create_model(config.model_config.model_name, config.model_config, mesh, rngs=test_rngs)
+    
+    # Create a template state object with the same structure as the model to be restored
+    # This ensures that the sharding information is correctly applied during restoration
+    abstract_state = jax.eval_shape(lambda: nnx.state(test_model, nnx.Param))
+    
+    # Load the checkpoint using the abstract state as a template
+    restored_state = checkpointer.restore(checkpoint_path, item=abstract_state)
+    
+    # Update the new model with the loaded state
+    nnx.update(test_model, restored_state)
+    
+    # Generate text with the loaded model to verify
+    test_generated_text = test_model.generate_text(
+        max_tokens=config.model_config.maxlen,
+        start_prompt=start_prompt,
+        tokenizer=tokenizer
+    )
+    logger.log_text("test_generated_text", test_generated_text, step=step)
+    print("--- Text generated from loaded model ---")
+    print(test_generated_text)
+    print("--- Checkpoint verification complete ---")
     
     logger.finish()
 

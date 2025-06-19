@@ -10,7 +10,7 @@ from models.gpt import GPT, TokenAndPositionEmbedding
 @register_model("mini-gpt")
 class MiniGPT(GPT):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
-        super().__init__(config, mesh, rngs=rngs)
+        super().__init__(config, mesh)
         self.embedding_layer = TokenAndPositionEmbedding(config, rngs=rngs)
         self.transformer_blocks = [
             TransformerBlock(config, mesh, rngs=rngs) for _ in range(config.num_transformer_blocks)
@@ -32,7 +32,7 @@ class MiniGPT(GPT):
 @register_model("micro-gpt")
 class MicroGPT(GPT):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
-        super().__init__(config, mesh, rngs=rngs)
+        super().__init__(config, mesh)
         self.embedding_layer = TokenAndPositionEmbedding(config, rngs=rngs)
         self.transformer_block = TransformerBlock(config, mesh, rngs=rngs)
         self.output_layer = nnx.Linear(

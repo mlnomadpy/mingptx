@@ -10,7 +10,7 @@ from nmn.nnx.nmn import YatNMN
 @register_model("mini-aethergpt")
 class MiniGPT(GPT):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
-        super().__init__(config, mesh, rngs=rngs)
+        super().__init__(config, mesh)
         self.embedding_layer = TokenAndPositionEmbedding(config, rngs=rngs)
         self.transformer_blocks = [
             TransformerBlock(config, mesh, rngs=rngs) for _ in range(config.num_transformer_blocks)
@@ -33,7 +33,7 @@ class MiniGPT(GPT):
 @register_model("micro-aethergpt")
 class MicroGPT(GPT):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
-        super().__init__(config, mesh, rngs=rngs)
+        super().__init__(config, mesh)
         self.embedding_layer = TokenAndPositionEmbedding(config, rngs=rngs)
         self.transformer_block = TransformerBlock(config, mesh, rngs=rngs)
         self.output_layer = YatNMN(
