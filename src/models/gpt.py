@@ -21,7 +21,6 @@ class GPT(nnx.Module):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
         self.config = config
         self.mesh = mesh
-        self.rngs = rngs
 
     def __call__(self, inputs, training: bool = False):
         raise NotImplementedError
