@@ -28,11 +28,15 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
         )
 
     # The map function is applied on-the-fly to batches of examples.
-    tokenized_dataset = hf_dataset.map(tokenize_function, batched=True)
+    tokenized_dataset = hf_dataset.map(
+        tokenize_function, 
+        batched=True,
+        remove_columns=hf_dataset.column_names
+    )
     
     # We only need 'input_ids' for the model, so we remove other columns.
     # The training script expects batches with 'input_ids'.
-    tokenized_dataset = tokenized_dataset.remove_columns(["text", "attention_mask"])
+    tokenized_dataset = tokenized_dataset.remove_columns(["attention_mask"])
 
     # Create a tf.data.Dataset from the Hugging Face IterableDataset.
     def data_generator():
