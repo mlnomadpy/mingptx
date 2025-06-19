@@ -187,7 +187,9 @@ def main():
                 loss_value = computed_metrics['loss'].item()
                 metrics_history['train_loss'].append(loss_value)
                 
-                log_metrics = {'train_loss': loss_value}
+                elapsed_time = time.time() - start_time
+                
+                log_metrics = {'train_loss': loss_value, 'elapsed_time': elapsed_time}
                 
                 flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
                 log_metrics.update(flat_grad_norms)
@@ -198,7 +200,6 @@ def main():
                 logger.log_metrics(log_metrics, step=step + 1)
                 metrics_manager.reset()
 
-                elapsed_time = time.time() - start_time
                 # print(f"Step {step + 1}, Loss: {loss_value}, Elapsed Time: {elapsed_time:.2f} seconds")
                 
                 start_time = time.time()
