@@ -1,10 +1,11 @@
 import tensorflow as tf
 from datasets import load_dataset
 from transformers import AutoTokenizer
+from functools import lru_cache
 
 from config import DataConfig, ModelConfig, TrainConfig
 
-def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer: AutoTokenizer):
+def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str):
     """
     Loads and prepares a text dataset for training with JAX.
     - Uses streaming for large datasets.
@@ -17,8 +18,20 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
     # Shuffle the dataset. For streaming, this uses a buffer of elements.
     hf_dataset = hf_dataset.shuffle(seed=42, buffer_size=10_000)
 
+    @lru_cache(maxsize=None)
+    def get_tokenizer(name):
+        """
+        Loads and caches the tokenizer.
+        Each worker process will have its own cached tokenizer.
+        """
+        tokenizer = AutoTokenizer.from_pretrained(name)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        return tokenizer
+
     def tokenize_function(examples):
         # The tokenizer returns TensorFlow tensors.
+        tokenizer = get_tokenizer(tokenizer_name)
         return tokenizer(
             examples["text"],
             truncation=True,

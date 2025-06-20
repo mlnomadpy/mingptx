@@ -111,7 +111,7 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
 
     # Load data
-    text_dl = load_text_dataset(config.data_config, config.model_config, config.train_config, tokenizer)
+    text_dl = load_text_dataset(config.data_config, config.model_config, config.train_config, config.data_config.tokenizer_name)
 
     # Create model
     rngs = nnx.Rngs(0)
