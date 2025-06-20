@@ -24,7 +24,7 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
         Loads and caches the tokenizer.
         Each worker process will have its own cached tokenizer.
         """
-        tokenizer = AutoTokenizer.from_pretrained(name)
+        tokenizer = AutoTokenizer.from_pretrained(name, use_fast=False)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         return tokenizer

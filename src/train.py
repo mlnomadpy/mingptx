@@ -59,6 +59,7 @@ def parse_args():
     parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.use_wandb, help="Whether to use wandb for logging.")
     parser.add_argument("--checkpoint_dir", type=str, default=default_config.train_config.checkpoint_dir, help="Directory to save checkpoints.")
     parser.add_argument("--debug", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.debug, help="Enable or disable debug prints.")
+    parser.add_argument("--run_generation", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.run_generation, help="Whether to run text generation.")
     
     args = parser.parse_args()
     
@@ -90,7 +91,8 @@ def parse_args():
             text_log_interval=args.text_log_interval,
             use_wandb=args.use_wandb,
             checkpoint_dir=args.checkpoint_dir,
-            debug=args.debug
+            debug=args.debug,
+            run_generation=args.run_generation
         )
     )
     return config
@@ -106,7 +108,7 @@ def main():
     }, use_wandb=config.train_config.use_wandb)
 
     # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config.data_config.tokenizer_name)
+    tokenizer = AutoTokenizer.from_pretrained(config.data_config.tokenizer_name, use_fast=False)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -147,12 +149,13 @@ def main():
 
     # Initial text generation
     start_prompt = "The difference between the mind and the cosmos is"
-    generated_text = model.generate_text(
-        max_tokens=config.model_config.maxlen, 
-        start_prompt=start_prompt,
-        tokenizer_name=config.data_config.tokenizer_name
-    )
-    logger.log_text("initial_generated_text", generated_text)
+    if config.train_config.run_generation:
+        generated_text = model.generate_text(
+            max_tokens=config.model_config.maxlen, 
+            start_prompt=start_prompt,
+            tokenizer=tokenizer
+        )
+        logger.log_text("initial_generated_text", generated_text)
 
     # Training loop
     metrics_history = {'train_loss': []}
@@ -205,22 +208,25 @@ def main():
                 start_time = time.time()
             step += 1
 
-            if (step + 1) % config.train_config.text_log_interval == 0:
+            if (step + 1) % config.train_config.text_log_interval == 0 and config.train_config.run_generation:
                 generated_text = model.generate_text(
                     max_tokens=config.model_config.maxlen, 
                     start_prompt=start_prompt,
-                    tokenizer_name=config.data_config.tokenizer_name
+                    tokenizer=tokenizer
                 )
                 logger.log_text("generated_text", generated_text, step=step + 1)
+
+            if (step + 1) % config.train_config.text_log_interval == 0:
                 visualize_and_log_loss(metrics_history, logger, step=step + 1)
 
     # Final text generation
-    final_text = model.generate_text(
-        max_tokens=config.model_config.maxlen, 
-        start_prompt=start_prompt,
-        tokenizer_name=config.data_config.tokenizer_name
-    )
-    logger.log_text("final_generated_text", final_text, step=step)
+    if config.train_config.run_generation:
+        final_text = model.generate_text(
+            max_tokens=config.model_config.maxlen, 
+            start_prompt=start_prompt,
+            tokenizer=tokenizer
+        )
+        logger.log_text("final_generated_text", final_text, step=step)
 
     # Save checkpoint
     state = nnx.state(model, nnx.Param)
@@ -249,15 +255,16 @@ def main():
     nnx.update(test_model, restored_state)
     
     # Generate text with the loaded model to verify
-    test_generated_text = test_model.generate_text(
-        max_tokens=config.model_config.maxlen,
-        start_prompt=start_prompt,
-        tokenizer_name=config.data_config.tokenizer_name
-    )
-    logger.log_text("test_generated_text", test_generated_text, step=step)
-    print("--- Text generated from loaded model ---")
-    print(test_generated_text)
-    print("--- Checkpoint verification complete ---")
+    if config.train_config.run_generation:
+        test_generated_text = test_model.generate_text(
+            max_tokens=config.model_config.maxlen,
+            start_prompt=start_prompt,
+            tokenizer=tokenizer
+        )
+        logger.log_text("test_generated_text", test_generated_text, step=step)
+        print("--- Text generated from loaded model ---")
+        print(test_generated_text)
+        print("--- Checkpoint verification complete ---")
     
     logger.finish()
 

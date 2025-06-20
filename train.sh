@@ -31,4 +31,5 @@ python src/train.py \
     --text_log_interval 200 \
     --use_wandb True \
     --checkpoint_dir "checkpoints" \
-    --debug False 
+    --debug False \
+    --run_generation True 

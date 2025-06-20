@@ -31,6 +31,7 @@ class TrainConfig:
     use_wandb: bool = True
     checkpoint_dir: str = 'checkpoints'
     debug: bool = False
+    run_generation: bool = True
 
 @dataclass
 class ProjectConfig:
