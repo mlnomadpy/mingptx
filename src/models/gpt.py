@@ -5,6 +5,7 @@ import flax.nnx as nnx
 from jax.sharding import Mesh
 
 from config import ModelConfig
+from transformers import AutoTokenizer
 
 class TokenAndPositionEmbedding(nnx.Module):
     def __init__(self, config: ModelConfig, *, rngs: nnx.Rngs):
@@ -25,7 +26,11 @@ class GPT(nnx.Module):
     def __call__(self, inputs, training: bool = False):
         raise NotImplementedError
 
-    def generate_text(self, max_tokens: int, start_prompt: str, tokenizer, top_k=10):
+    def generate_text(self, max_tokens: int, start_prompt: str, tokenizer_name: str, top_k=10):
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        
         start_tokens = tokenizer.encode(start_prompt, return_tensors="jax")[0].tolist()
         
         def sample_from(logits):

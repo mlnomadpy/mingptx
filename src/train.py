@@ -146,11 +146,11 @@ def main():
         return grad_norms
 
     # Initial text generation
-    start_prompt = "Once upon a time"
+    start_prompt = "The difference between the mind and the cosmos is"
     generated_text = model.generate_text(
         max_tokens=config.model_config.maxlen, 
         start_prompt=start_prompt,
-        tokenizer=tokenizer
+        tokenizer_name=config.data_config.tokenizer_name
     )
     logger.log_text("initial_generated_text", generated_text)
 
@@ -209,7 +209,7 @@ def main():
                 generated_text = model.generate_text(
                     max_tokens=config.model_config.maxlen, 
                     start_prompt=start_prompt,
-                    tokenizer=tokenizer
+                    tokenizer_name=config.data_config.tokenizer_name
                 )
                 logger.log_text("generated_text", generated_text, step=step + 1)
                 visualize_and_log_loss(metrics_history, logger, step=step + 1)
@@ -218,7 +218,7 @@ def main():
     final_text = model.generate_text(
         max_tokens=config.model_config.maxlen, 
         start_prompt=start_prompt,
-        tokenizer=tokenizer
+        tokenizer_name=config.data_config.tokenizer_name
     )
     logger.log_text("final_generated_text", final_text, step=step)
 
@@ -252,7 +252,7 @@ def main():
     test_generated_text = test_model.generate_text(
         max_tokens=config.model_config.maxlen,
         start_prompt=start_prompt,
-        tokenizer=tokenizer
+        tokenizer_name=config.data_config.tokenizer_name
     )
     logger.log_text("test_generated_text", test_generated_text, step=step)
     print("--- Text generated from loaded model ---")
