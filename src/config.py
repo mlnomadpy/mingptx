@@ -17,6 +17,7 @@ class ModelConfig:
 class DataConfig:
     dataset_name: str = 'roneneldan/TinyStories'
     split: str = 'train'
+    validation_split_name: str = 'validation'
     batch_size: int = 256
     tokenizer_name: str = 'gpt2'
 
@@ -25,8 +26,12 @@ class TrainConfig:
     optimizer_name: str = "adam"
     num_epochs: int = 1
     learning_rate: float = 1e-3
+    lr_warmup_steps: int = 2000
+    lr_num_decay_steps: int = 100000
     weight_decay: float = 1e-4
+    grad_clip_value: float = 1.0
     log_interval: int = 1
+    eval_interval: int = 100
     text_log_interval: int = 200
     use_wandb: bool = True
     checkpoint_dir: str = 'checkpoints'

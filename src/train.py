@@ -53,7 +53,10 @@ def parse_args():
     parser.add_argument("--optimizer_name", type=str, default=default_config.train_config.optimizer_name, help="Optimizer to use (e.g., 'adam', 'adamw').")
     parser.add_argument("--num_epochs", type=int, default=default_config.train_config.num_epochs, help="Number of training epochs.")
     parser.add_argument("--learning_rate", type=float, default=default_config.train_config.learning_rate, help="Learning rate for the optimizer.")
+    parser.add_argument("--lr_warmup_steps", type=int, default=default_config.train_config.lr_warmup_steps, help="Number of warmup steps for learning rate schedule.")
+    parser.add_argument("--lr_num_decay_steps", type=int, default=default_config.train_config.lr_num_decay_steps, help="Number of decay steps for learning rate schedule.")
     parser.add_argument("--weight_decay", type=float, default=default_config.train_config.weight_decay, help="Weight decay for the optimizer.")
+    parser.add_argument("--grad_clip_value", type=float, default=default_config.train_config.grad_clip_value, help="Value for gradient clipping.")
     parser.add_argument("--log_interval", type=int, default=default_config.train_config.log_interval, help="Interval for logging metrics.")
     parser.add_argument("--text_log_interval", type=int, default=default_config.train_config.text_log_interval, help="Interval for logging generated text.")
     parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.use_wandb, help="Whether to use wandb for logging.")
@@ -86,7 +89,10 @@ def parse_args():
             optimizer_name=args.optimizer_name,
             num_epochs=args.num_epochs,
             learning_rate=args.learning_rate,
+            lr_warmup_steps=args.lr_warmup_steps,
+            lr_num_decay_steps=args.lr_num_decay_steps,
             weight_decay=args.weight_decay,
+            grad_clip_value=args.grad_clip_value,
             log_interval=args.log_interval,
             text_log_interval=args.text_log_interval,
             use_wandb=args.use_wandb,
