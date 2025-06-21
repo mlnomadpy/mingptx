@@ -8,4 +8,6 @@ wandb
 matplotlib
 grain-nightly
 tiktoken
-pandas 
+pandas
+# Add pyyaml for config file handling
+PyYAML

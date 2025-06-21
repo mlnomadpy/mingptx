@@ -1,0 +1,32 @@
+model_config:
+  model_name: "mini-gpt"
+  maxlen: 256
+  vocab_size: 50257 # GPT-2 vocab size
+  embed_dim: 32
+  num_heads: 4
+  feed_forward_dim: 32 # 4 * embed_dim
+  num_transformer_blocks: 3
+  dropout_rate: 0.1
+  dropconnect_rate: 0.1
+  use_dropconnect: False
+
+data_config:
+  dataset_name: "mlx-community/fineweb-200k"
+  split: "train"
+  batch_size: 128
+  tokenizer_name: "gpt2"
+
+train_config:
+  optimizer_name: "adamw"
+  num_epochs: 1
+  learning_rate: 0.0003
+  lr_warmup_steps: 100
+  lr_num_decay_steps: 500000
+  weight_decay: 0.1
+  grad_clip_value: 1.0
+  log_interval: 100
+  text_log_interval: 500
+  use_wandb: True
+  checkpoint_dir: "checkpoints"
+  debug: False
+  run_generation: True 

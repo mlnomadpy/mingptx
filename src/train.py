@@ -9,6 +9,7 @@ from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental import mesh_utils
 from transformers import AutoTokenizer
 import argparse
+import yaml
 
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
@@ -29,41 +30,67 @@ def setup_mesh():
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a mini-GPT model.")
     
+    # Add an argument for the config file
+    parser.add_argument("--config", type=str, default="config.yaml", help="Path to the YAML config file.")
+    
+    # Temporarily parse for the config file path
+    config_args, _ = parser.parse_known_args()
+
+    # Load config from YAML file
+    try:
+        with open(config_args.config, 'r') as f:
+            yaml_config = yaml.safe_load(f)
+    except FileNotFoundError:
+        print(f"Warning: Config file not found at {config_args.config}. Using default values.")
+        yaml_config = {}
+
+    # Create a new parser that will consume all arguments, and add back the config argument
+    parser = argparse.ArgumentParser(description="Train a mini-GPT model.")
+    parser.add_argument("--config", type=str, default=config_args.config, help="Path to the YAML config file.")
+    
     default_config = ProjectConfig()
 
+    # Helper to get config values from YAML or defaults
+    def get_config_value(section, key, default_value):
+        return yaml_config.get(section, {}).get(key, default_value)
+
     # Model args
-    parser.add_argument("--model_name", type=str, default="mini-gpt", help="Name of the model to train.")
-    parser.add_argument("--maxlen", type=int, default=default_config.model_config.maxlen, help="Maximum sequence length.")
-    parser.add_argument("--vocab_size", type=int, default=default_config.model_config.vocab_size, help="Vocabulary size.")
-    parser.add_argument("--embed_dim", type=int, default=default_config.model_config.embed_dim, help="Embedding dimensionality.")
-    parser.add_argument("--num_heads", type=int, default=default_config.model_config.num_heads, help="Number of attention heads.")
-    parser.add_argument("--feed_forward_dim", type=int, default=default_config.model_config.feed_forward_dim, help="Dimensionality of the feed-forward network.")
-    parser.add_argument("--num_transformer_blocks", type=int, default=default_config.model_config.num_transformer_blocks, help="Number of transformer blocks.")
-    parser.add_argument("--dropout_rate", type=float, default=default_config.model_config.dropout_rate, help="Dropout rate.")
-    parser.add_argument("--dropconnect_rate", type=float, default=default_config.model_config.dropconnect_rate, help="Dropconnect rate.")
-    parser.add_argument("--use_dropconnect", type=lambda x: (str(x).lower() == 'true'), default=default_config.model_config.use_dropconnect, help="Whether to use dropconnect.")
+    model_config_defaults = default_config.model_config
+    parser.add_argument("--model_name", type=str, default=get_config_value("model_config", "model_name", model_config_defaults.model_name), help="Name of the model to train.")
+    parser.add_argument("--maxlen", type=int, default=get_config_value("model_config", "maxlen", model_config_defaults.maxlen), help="Maximum sequence length.")
+    parser.add_argument("--vocab_size", type=int, default=get_config_value("model_config", "vocab_size", model_config_defaults.vocab_size), help="Vocabulary size.")
+    parser.add_argument("--embed_dim", type=int, default=get_config_value("model_config", "embed_dim", model_config_defaults.embed_dim), help="Embedding dimensionality.")
+    parser.add_argument("--num_heads", type=int, default=get_config_value("model_config", "num_heads", model_config_defaults.num_heads), help="Number of attention heads.")
+    parser.add_argument("--feed_forward_dim", type=int, default=get_config_value("model_config", "feed_forward_dim", model_config_defaults.feed_forward_dim), help="Dimensionality of the feed-forward network.")
+    parser.add_argument("--num_transformer_blocks", type=int, default=get_config_value("model_config", "num_transformer_blocks", model_config_defaults.num_transformer_blocks), help="Number of transformer blocks.")
+    parser.add_argument("--dropout_rate", type=float, default=get_config_value("model_config", "dropout_rate", model_config_defaults.dropout_rate), help="Dropout rate.")
+    parser.add_argument("--dropconnect_rate", type=float, default=get_config_value("model_config", "dropconnect_rate", model_config_defaults.dropconnect_rate), help="Dropconnect rate.")
+    parser.add_argument("--use_dropconnect", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_dropconnect", model_config_defaults.use_dropconnect), help="Whether to use dropconnect.")
 
     # Data args
-    parser.add_argument("--dataset_name", type=str, default=default_config.data_config.dataset_name, help="Hugging Face dataset name.")
-    parser.add_argument("--split", type=str, default=default_config.data_config.split, help="Dataset split to use.")
-    parser.add_argument("--batch_size", type=int, default=default_config.data_config.batch_size, help="Batch size for training.")
-    parser.add_argument("--tokenizer_name", type=str, default=default_config.data_config.tokenizer_name, help="Tokenizer to use.")
+    data_config_defaults = default_config.data_config
+    parser.add_argument("--dataset_name", type=str, default=get_config_value("data_config", "dataset_name", data_config_defaults.dataset_name), help="Hugging Face dataset name.")
+    parser.add_argument("--split", type=str, default=get_config_value("data_config", "split", data_config_defaults.split), help="Dataset split to use.")
+    parser.add_argument("--batch_size", type=int, default=get_config_value("data_config", "batch_size", data_config_defaults.batch_size), help="Batch size for training.")
+    parser.add_argument("--tokenizer_name", type=str, default=get_config_value("data_config", "tokenizer_name", data_config_defaults.tokenizer_name), help="Tokenizer to use.")
 
     # Train args
-    parser.add_argument("--optimizer_name", type=str, default=default_config.train_config.optimizer_name, help="Optimizer to use (e.g., 'adam', 'adamw').")
-    parser.add_argument("--num_epochs", type=int, default=default_config.train_config.num_epochs, help="Number of training epochs.")
-    parser.add_argument("--learning_rate", type=float, default=default_config.train_config.learning_rate, help="Learning rate for the optimizer.")
-    parser.add_argument("--lr_warmup_steps", type=int, default=default_config.train_config.lr_warmup_steps, help="Number of warmup steps for learning rate schedule.")
-    parser.add_argument("--lr_num_decay_steps", type=int, default=default_config.train_config.lr_num_decay_steps, help="Number of decay steps for learning rate schedule.")
-    parser.add_argument("--weight_decay", type=float, default=default_config.train_config.weight_decay, help="Weight decay for the optimizer.")
-    parser.add_argument("--grad_clip_value", type=float, default=default_config.train_config.grad_clip_value, help="Value for gradient clipping.")
-    parser.add_argument("--log_interval", type=int, default=default_config.train_config.log_interval, help="Interval for logging metrics.")
-    parser.add_argument("--text_log_interval", type=int, default=default_config.train_config.text_log_interval, help="Interval for logging generated text.")
-    parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.use_wandb, help="Whether to use wandb for logging.")
-    parser.add_argument("--checkpoint_dir", type=str, default=default_config.train_config.checkpoint_dir, help="Directory to save checkpoints.")
-    parser.add_argument("--debug", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.debug, help="Enable or disable debug prints.")
-    parser.add_argument("--run_generation", type=lambda x: (str(x).lower() == 'true'), default=default_config.train_config.run_generation, help="Whether to run text generation.")
+    train_config_defaults = default_config.train_config
+    parser.add_argument("--optimizer_name", type=str, default=get_config_value("train_config", "optimizer_name", train_config_defaults.optimizer_name), help="Optimizer to use (e.g., 'adam', 'adamw').")
+    parser.add_argument("--num_epochs", type=int, default=get_config_value("train_config", "num_epochs", train_config_defaults.num_epochs), help="Number of training epochs.")
+    parser.add_argument("--learning_rate", type=float, default=get_config_value("train_config", "learning_rate", train_config_defaults.learning_rate), help="Learning rate for the optimizer.")
+    parser.add_argument("--lr_warmup_steps", type=int, default=get_config_value("train_config", "lr_warmup_steps", train_config_defaults.lr_warmup_steps), help="Number of warmup steps for learning rate schedule.")
+    parser.add_argument("--lr_num_decay_steps", type=int, default=get_config_value("train_config", "lr_num_decay_steps", train_config_defaults.lr_num_decay_steps), help="Number of decay steps for learning rate schedule.")
+    parser.add_argument("--weight_decay", type=float, default=get_config_value("train_config", "weight_decay", train_config_defaults.weight_decay), help="Weight decay for the optimizer.")
+    parser.add_argument("--grad_clip_value", type=float, default=get_config_value("train_config", "grad_clip_value", train_config_defaults.grad_clip_value), help="Value for gradient clipping.")
+    parser.add_argument("--log_interval", type=int, default=get_config_value("train_config", "log_interval", train_config_defaults.log_interval), help="Interval for logging metrics.")
+    parser.add_argument("--text_log_interval", type=int, default=get_config_value("train_config", "text_log_interval", train_config_defaults.text_log_interval), help="Interval for logging generated text.")
+    parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "use_wandb", train_config_defaults.use_wandb), help="Whether to use wandb for logging.")
+    parser.add_argument("--checkpoint_dir", type=str, default=get_config_value("train_config", "checkpoint_dir", train_config_defaults.checkpoint_dir), help="Directory to save checkpoints.")
+    parser.add_argument("--debug", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "debug", train_config_defaults.debug), help="Enable or disable debug prints.")
+    parser.add_argument("--run_generation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "run_generation", train_config_defaults.run_generation), help="Whether to run text generation.")
     
+    # Now parse all arguments
     args = parser.parse_args()
     
     config = ProjectConfig(
