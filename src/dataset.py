@@ -320,4 +320,4 @@ def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t
     )
     tf_dataset = tf_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     
-    return tf_dataset 
+    return tf_dataset.as_numpy_iterator() 
