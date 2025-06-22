@@ -70,10 +70,13 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
     # Batch and prefetch the dataset for performance.
     tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
     
+    # Create the padding tensor once to avoid overhead in the map function.
+    pad_tensor = tf.constant(pad_token_id, shape=(d_config.batch_size, 1), dtype=tf.int64)
+
     def create_inputs_and_targets(batch):
         input_ids = batch['input_ids']
-        # Create target by shifting input
-        target_ids = tf.concat([input_ids[:, 1:], tf.constant(pad_token_id, shape=(d_config.batch_size, 1), dtype=tf.int64)], axis=1)
+        # Create target by shifting input, reusing the pre-made pad_tensor.
+        target_ids = tf.concat([input_ids[:, 1:], pad_tensor], axis=1)
         # The model expects (maxlen, batch_size), so we transpose.
         input_batch = tf.transpose(input_ids)
         target_batch = tf.transpose(target_ids)
