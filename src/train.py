@@ -84,6 +84,7 @@ def parse_args():
     parser.add_argument("--prefetch_buffer_size", type=int, default=get_config_value("data_config", "prefetch_buffer_size", data_config_defaults.prefetch_buffer_size), help="Prefetch buffer size for data loading.")
     parser.add_argument("--tokenization_batch_size", type=int, default=get_config_value("data_config", "tokenization_batch_size", data_config_defaults.tokenization_batch_size), help="Batch size for tokenization.")
     parser.add_argument("--use_fast_tokenizer", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("data_config", "use_fast_tokenizer", data_config_defaults.use_fast_tokenizer), help="Whether to use fast tokenizer.")
+    parser.add_argument("--loader", type=str, default=get_config_value("data_config", "loader", data_config_defaults.loader), help="Data loader to use ('grain' or 'tf').")
 
     # Train args
     train_config_defaults = default_config.train_config
@@ -134,7 +135,8 @@ def parse_args():
             num_threads=args.num_threads,
             prefetch_buffer_size=args.prefetch_buffer_size,
             tokenization_batch_size=args.tokenization_batch_size,
-            use_fast_tokenizer=args.use_fast_tokenizer
+            use_fast_tokenizer=args.use_fast_tokenizer,
+            loader=args.loader
         ),
         train_config=TrainConfig(
             optimizer_name=args.optimizer_name,

@@ -190,6 +190,15 @@ def create_input_target_transform(pad_token_id: int):
     return transform
 
 def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
+    """Loads dataset using the loader specified in the config."""
+    if d_config.loader == 'grain':
+        return load_text_dataset_grain(d_config, m_config, t_config, tokenizer_name, pad_token_id)
+    elif d_config.loader == 'tf':
+        return load_text_dataset_tf_fallback(d_config, m_config, t_config, tokenizer_name, pad_token_id)
+    else:
+        raise ValueError(f"Unknown data loader: {d_config.loader}")
+
+def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
     """
     Loads and prepares a text dataset for training with JAX using Grain.
     - Uses JAX-native data loading for better performance

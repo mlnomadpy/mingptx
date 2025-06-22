@@ -32,6 +32,7 @@ class DataConfig:
     prefetch_buffer_size: int = 50
     tokenization_batch_size: int = 1000
     use_fast_tokenizer: bool = True
+    loader: str = "grain"  # 'grain' or 'tf'
 
 @dataclass
 class TrainConfig:
