@@ -303,10 +303,8 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
 
     # Use a generator to feed data to tf.data.Dataset, which is compatible with IterableDataset
     def data_generator():
-        for batch in tokenized_dataset:
-            # Yield each example in the batch
-            for i in range(len(batch['input_ids'])):
-                yield {'input_ids': batch['input_ids'][i]}
+        for example in tokenized_dataset:
+            yield example
 
     # Define the output signature for the generator
     output_signature = {
