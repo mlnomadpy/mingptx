@@ -332,7 +332,7 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
     def create_inputs_and_targets(batch):
         input_ids = batch['input_ids']
         # Create target by shifting input
-        target_ids = tf.concat([input_ids[:, 1:], tf.fill((d_config.batch_size, 1), pad_token_id, dtype=tf.int32)], axis=1)
+        target_ids = tf.concat([input_ids[:, 1:], tf.fill((d_config.batch_size, 1), pad_token_id)], axis=1)
         # The model expects (maxlen, batch_size), so we transpose.
         input_batch = tf.transpose(input_ids)
         target_batch = tf.transpose(target_ids)
