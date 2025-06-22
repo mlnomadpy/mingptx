@@ -276,7 +276,7 @@ def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t
         tokenize_function, 
         batched=True,
         batch_size=d_config.tokenization_batch_size,  # Use config value instead of hardcoded 1000
-        remove_columns=hf_dataset.column_names
+        remove_columns=list(hf_dataset.features) if hf_dataset.features else None
     )
     
     # We only need 'input_ids' for the model, so we remove other columns.
@@ -286,12 +286,12 @@ def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t
     # Create a tf.data.Dataset from the Hugging Face IterableDataset.
     def data_generator():
         for record in tokenized_dataset:
-            yield record
+            yield {'input_ids': record['input_ids']}
 
     # The output from the generator will be a dictionary. The training loop
     # expects 'input_ids'.
     output_signature = {
-        'input_ids': tf.TensorSpec(shape=(m_config.maxlen,), dtype=tf.int64)
+        'input_ids': tf.TensorSpec(shape=(m_config.maxlen,), dtype=tf.int32)
     }
 
     tf_dataset = tf.data.Dataset.from_generator(
@@ -303,7 +303,7 @@ def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t
     tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
     
     # Create the padding tensor once to avoid overhead in the map function.
-    pad_tensor = tf.constant(pad_token_id, shape=(d_config.batch_size, 1), dtype=tf.int64)
+    pad_tensor = tf.constant(pad_token_id, shape=(d_config.batch_size, 1), dtype=tf.int32)
 
     def create_inputs_and_targets(batch):
         input_ids = batch['input_ids']
