@@ -6,6 +6,7 @@ from transformers import AutoTokenizer
 from functools import lru_cache
 import numpy as np
 from typing import Iterator, Dict, Any
+import threading
 
 from config import DataConfig, ModelConfig, TrainConfig
 
@@ -37,6 +38,7 @@ class TextDataSource(grain.RandomAccessDataSource):
         self._cache_refresh_interval = d_config.cache_refresh_interval
         self._total_accessed = 0
         self._cache_generation = 0
+        self._lock = threading.Lock()
         
         # Populate initial cache
         self._populate_cache()
@@ -67,7 +69,9 @@ class TextDataSource(grain.RandomAccessDataSource):
                 
         except StopIteration:
             # If we run out of data, recreate the iterator
-            print("Reached end of dataset, recreating iterator...")
+            print("Reached end of dataset, reshuffling and recreating iterator...")
+            # Reshuffle with a new seed to ensure different data ordering in next pass
+            self.dataset = self.dataset.shuffle(seed=self.d_config.shuffle_seed + self._cache_generation, buffer_size=self.d_config.shuffle_buffer_size)
             self.dataset_iter = iter(self.dataset)
             # Try to fill the remaining cache
             for example in self.dataset_iter:
@@ -117,6 +121,9 @@ class TextDataSource(grain.RandomAccessDataSource):
                 new_entries.append(tokens['input_ids'].squeeze(0).astype(np.int32))
         except StopIteration:
             # Recreate iterator if we reach the end
+            print("Reached end of dataset during refresh, reshuffling and recreating iterator...")
+            # Reshuffle with a new seed to ensure different data ordering
+            self.dataset = self.dataset.shuffle(seed=self.d_config.shuffle_seed + self._cache_generation, buffer_size=self.d_config.shuffle_buffer_size)
             self.dataset_iter = iter(self.dataset)
             remaining = refresh_count - len(new_entries)
             for _ in range(remaining):
@@ -141,13 +148,14 @@ class TextDataSource(grain.RandomAccessDataSource):
         return len(self._data_cache)
     
     def __getitem__(self, index):
-        self._total_accessed += 1
-        
-        # Periodically refresh part of the cache to see new data
-        if self._total_accessed % (self._cache_size * self._cache_refresh_interval) == 0:
-            self._refresh_cache_partially()
-        
-        return self._data_cache[index % len(self._data_cache)]
+        with self._lock:
+            self._total_accessed += 1
+            
+            # Periodically refresh part of the cache to see new data
+            if self._total_accessed % (self._cache_size * self._cache_refresh_interval) == 0:
+                self._refresh_cache_partially()
+            
+            return self._data_cache[index % len(self._data_cache)]
 
     def get_cache_stats(self):
         """Get statistics about the cache for debugging."""

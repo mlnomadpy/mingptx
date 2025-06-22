@@ -306,17 +306,15 @@ def main():
     # Update the new model with the loaded state
     nnx.update(test_model, restored_state)
     
-    # Generate text with the loaded model to verify
-    if config.train_config.run_generation:
-        test_generated_text = test_model.generate_text(
-            max_tokens=config.model_config.maxlen,
-            start_prompt=start_prompt,
-            tokenizer=tokenizer
-        )
-        logger.log_text("test_generated_text", test_generated_text, step=step)
-        print("--- Text generated from loaded model ---")
-        print(test_generated_text)
-        print("--- Checkpoint verification complete ---")
+    test_generated_text = test_model.generate_text(
+        max_tokens=config.model_config.maxlen,
+        start_prompt=start_prompt,
+        tokenizer=tokenizer
+    )
+    logger.log_text("test_generated_text", test_generated_text, step=step)
+    print("--- Text generated from loaded model ---")
+    print(test_generated_text)
+    print("--- Checkpoint verification complete ---")
     
     logger.finish()
 
