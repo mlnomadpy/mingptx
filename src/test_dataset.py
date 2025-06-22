@@ -252,11 +252,65 @@ def test_data_integrity(loader: str):
     print(f"--- Data Integrity test for loader {loader} finished ---")
 
 
+def test_streaming_updates(loader: str):
+    """
+    Tests that streaming mode continuously provides new data beyond the buffer size.
+    """
+    print(f"\n--- Testing Streaming Updates for loader: {loader} ---")
+    
+    # Use a smaller buffer to test this behavior efficiently
+    buffer_size = 50
+    batch_size = 4
+    d_config = MockDataConfig(
+        loader=loader, 
+        use_cache=False, # Ensure streaming
+        shuffle_buffer_size=buffer_size,
+        batch_size=batch_size
+    )
+    m_config = MockModelConfig()
+    t_config = MockTrainConfig()
+    
+    _, pad_token_id = get_tokenizer_and_pad_id(m_config)
+    dataset = load_text_dataset(d_config, m_config, t_config, "gpt2", pad_token_id)
+    iterator = iter(dataset)
+
+    # We want to fetch more batches than can fit in the shuffle buffer
+    # to ensure the loader is fetching new data.
+    num_batches_to_fetch = (buffer_size // batch_size) + 5
+    print(f"Attempting to fetch {num_batches_to_fetch} batches to test streaming beyond buffer size...")
+
+    batches = []
+    try:
+        for _ in range(num_batches_to_fetch):
+            batches.append(next(iterator))
+    except StopIteration:
+        print(f"FAIL: Dataset iterator for loader '{loader}' exhausted before fetching {num_batches_to_fetch} batches.")
+        return
+
+    if len(batches) < num_batches_to_fetch:
+        print(f"FAIL: Only fetched {len(batches)} out of {num_batches_to_fetch} batches.")
+        return
+
+    all_different = True
+    for i in range(len(batches) - 1):
+        if not are_batches_different(batches[i], batches[i+1]):
+            all_different = False
+            print(f"Warning: Batches {i} and {i+1} are identical for loader '{loader}'.")
+
+    if not all_different:
+        print(f"FAIL: Some consecutive batches were identical. Streaming might not be updating correctly.")
+    else:
+        print(f"SUCCESS: All {num_batches_to_fetch} fetched batches were unique, indicating streaming is working.")
+
+    print(f"--- Streaming Updates test for loader {loader} finished ---")
+
+
 if __name__ == "__main__":
     loaders_to_test = ["grain", "tf"]
     for loader in loaders_to_test:
         run_dataset_iteration_test(loader)
         test_shuffling_and_seeding(loader)
         test_data_integrity(loader)
+        test_streaming_updates(loader)
         test_performance(loader)
         print("\n" + "="*50 + "\n") 
