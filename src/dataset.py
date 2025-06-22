@@ -6,8 +6,84 @@ from transformers import AutoTokenizer
 from functools import lru_cache
 import numpy as np
 from typing import Iterator, Dict, Any
+import concurrent.futures
+import threading
 
 from config import DataConfig, ModelConfig, TrainConfig
+
+class OptimizedTextDataSource(grain.RandomAccessDataSource):
+    """Highly optimized data source for streaming datasets with parallel tokenization."""
+    
+    def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int, cache_size: int = 50000):
+        self.dataset_name = dataset_name
+        self.split = split
+        self.max_length = max_length
+        self.cache_size = cache_size
+        
+        # Load tokenizer once with optimization
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        
+        # Load dataset in streaming mode with larger buffer
+        self.dataset = load_dataset(dataset_name, split=split, streaming=True)
+        self.dataset = self.dataset.shuffle(seed=42, buffer_size=50_000)
+        
+        # Pre-populate cache with parallel processing
+        self._data_cache = []
+        self._cache_lock = threading.Lock()
+        self._populate_cache_parallel()
+    
+    def _tokenize_batch(self, texts):
+        """Tokenize a batch of texts efficiently."""
+        tokens = self.tokenizer(
+            texts,
+            truncation=True,
+            padding="max_length", 
+            max_length=self.max_length,
+            return_tensors="np"
+        )
+        return tokens['input_ids'].astype(np.int32)
+    
+    def _populate_cache_parallel(self):
+        """Populate cache with parallel tokenization for better performance."""
+        print(f"Populating cache with {self.cache_size} examples using parallel processing...")
+        
+        # Collect raw texts first
+        raw_texts = []
+        for i, example in enumerate(self.dataset):
+            if i >= self.cache_size:
+                break
+            raw_texts.append(example["text"])
+        
+        # Process in batches with parallel tokenization
+        batch_size = 1000  # Process 1000 texts at once
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = []
+            
+            for i in range(0, len(raw_texts), batch_size):
+                batch_texts = raw_texts[i:i + batch_size]
+                future = executor.submit(self._tokenize_batch, batch_texts)
+                futures.append(future)
+            
+            # Collect results
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    batch_tokens = future.result()
+                    with self._cache_lock:
+                        for token_seq in batch_tokens:
+                            self._data_cache.append(token_seq)
+                except Exception as e:
+                    print(f"Error in batch tokenization: {e}")
+        
+        print(f"Cache populated with {len(self._data_cache)} examples")
+    
+    def __len__(self):
+        return len(self._data_cache)
+    
+    def __getitem__(self, index):
+        return self._data_cache[index % len(self._data_cache)]
 
 class TextDataSource(grain.RandomAccessDataSource):
     """Efficient data source for streaming datasets."""
@@ -80,7 +156,7 @@ def create_input_target_transform(pad_token_id: int):
     
     return transform
 
-def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
+def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int, use_optimized: bool = True):
     """
     Loads and prepares a text dataset for training with JAX using Grain.
     - Uses JAX-native data loading for better performance
@@ -88,13 +164,22 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
     - Optimized memory usage
     """
     
-    # Create data source
-    data_source = TextDataSource(
-        dataset_name=d_config.dataset_name,
-        split=d_config.split,
-        tokenizer_name=tokenizer_name,
-        max_length=m_config.maxlen
-    )
+    # Create data source - use optimized version if requested
+    if use_optimized:
+        data_source = OptimizedTextDataSource(
+            dataset_name=d_config.dataset_name,
+            split=d_config.split,
+            tokenizer_name=tokenizer_name,
+            max_length=m_config.maxlen,
+            cache_size=50000  # Larger cache for better performance
+        )
+    else:
+        data_source = TextDataSource(
+            dataset_name=d_config.dataset_name,
+            split=d_config.split,
+            tokenizer_name=tokenizer_name,
+            max_length=m_config.maxlen
+        )
     
     # Create input/target transformation
     transform = create_input_target_transform(pad_token_id)
@@ -107,10 +192,13 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
         .map(transform)
     )
     
-    # Convert to iterable dataset for training
-    # Use fewer threads for initial testing
+    # Convert to iterable dataset for training with optimized settings
     iter_dataset = dataset.to_iter_dataset(
-        grain.ReadOptions(num_threads=2, prefetch_buffer_size=50)
+        grain.ReadOptions(
+            num_threads=8,  # Increased from 2 to 8 threads
+            prefetch_buffer_size=100,  # Increased buffer size
+            enable_profiling=False  # Disable profiling for better performance
+        )
     )
     
     return iter_dataset
