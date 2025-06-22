@@ -34,8 +34,6 @@ class TextDataSource(grain.RandomAccessDataSource):
         # Dynamic cache configuration
         self._cache_size = d_config.cache_size
         self._data_cache = []
-        self._cache_refresh_rate = d_config.cache_refresh_rate
-        self._cache_refresh_interval = d_config.cache_refresh_interval
         self._total_accessed = 0
         self._cache_generation = 0
         self._lock = threading.Lock()
@@ -92,58 +90,6 @@ class TextDataSource(grain.RandomAccessDataSource):
         print(f"Cache populated with {len(self._data_cache)} examples")
         self._cache_generation += 1
     
-    def _refresh_cache_partially(self):
-        """Refresh a portion of the cache with new data."""
-        if len(self._data_cache) == 0:
-            self._populate_cache()
-            return
-            
-        refresh_count = min(self._cache_refresh_rate, len(self._data_cache))
-        print(f"Refreshing {refresh_count} cache entries...")
-        
-        # Remove old entries from random positions
-        import random
-        random.seed(self.d_config.shuffle_seed + self._cache_generation)
-        indices_to_replace = random.sample(range(len(self._data_cache)), refresh_count)
-        
-        # Add new entries
-        new_entries = []
-        try:
-            for _ in range(refresh_count):
-                example = next(self.dataset_iter)
-                tokens = self.tokenizer(
-                    example["text"],
-                    truncation=True,
-                    padding="max_length",
-                    max_length=self.max_length,
-                    return_tensors="np"
-                )
-                new_entries.append(tokens['input_ids'].squeeze(0).astype(np.int32))
-        except StopIteration:
-            # Recreate iterator if we reach the end
-            print("Reached end of dataset during refresh, reshuffling and recreating iterator...")
-            # Reshuffle with a new seed to ensure different data ordering
-            self.dataset = self.dataset.shuffle(seed=self.d_config.shuffle_seed + self._cache_generation, buffer_size=self.d_config.shuffle_buffer_size)
-            self.dataset_iter = iter(self.dataset)
-            remaining = refresh_count - len(new_entries)
-            for _ in range(remaining):
-                try:
-                    example = next(self.dataset_iter)
-                    tokens = self.tokenizer(
-                        example["text"],
-                        truncation=True,
-                        padding="max_length",
-                        max_length=self.max_length,
-                        return_tensors="np"
-                    )
-                    new_entries.append(tokens['input_ids'].squeeze(0).astype(np.int32))
-                except StopIteration:
-                    break
-        
-        # Replace old entries with new ones
-        for i, new_entry in zip(indices_to_replace[:len(new_entries)], new_entries):
-            self._data_cache[i] = new_entry
-    
     def __len__(self):
         return len(self._data_cache)
     
@@ -151,9 +97,13 @@ class TextDataSource(grain.RandomAccessDataSource):
         with self._lock:
             self._total_accessed += 1
             
-            # Periodically refresh part of the cache to see new data
-            if self._total_accessed % (self._cache_size * self._cache_refresh_interval) == 0:
-                self._refresh_cache_partially()
+            # Periodically refresh the entire cache to see new data
+            if self._total_accessed > 0 and self._total_accessed % self._cache_size == 0:
+                self._populate_cache()
+            
+            # Ensure cache is not empty before accessing
+            if not self._data_cache:
+                raise IndexError("Data cache is empty. Possible exhaustion of the dataset.")
             
             return self._data_cache[index % len(self._data_cache)]
 
@@ -163,8 +113,6 @@ class TextDataSource(grain.RandomAccessDataSource):
             'cache_size': len(self._data_cache),
             'total_accessed': self._total_accessed,
             'cache_generation': self._cache_generation,
-            'refresh_rate': self._cache_refresh_rate,
-            'refresh_interval': self._cache_refresh_interval
         }
 
 def create_input_target_transform(pad_token_id: int):
