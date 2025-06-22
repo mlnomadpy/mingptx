@@ -120,10 +120,11 @@ def benchmark_data_loader(loader, name: str, num_batches: int = 20, is_tf: bool 
         'num_batches': len(batch_times)
     }
 
-def test_grain_data_loading(num_batches: int = 20):
+def test_grain_data_loading(num_batches: int = 20, use_optimized: bool = True):
     """Test the Grain-based data loading implementation."""
     
-    print("Testing Grain-based data loading...")
+    impl_name = "Optimized Grain" if use_optimized else "Original Grain"
+    print(f"Testing {impl_name} data loading...")
     
     # Configuration
     model_config = ModelConfig(maxlen=256)
@@ -140,28 +141,29 @@ def test_grain_data_loading(num_batches: int = 20):
         tokenizer.pad_token = tokenizer.eos_token
     
     try:
-        print("Loading Grain-based data loader...")
+        print(f"Loading {impl_name} data loader...")
         load_start = time.time()
         
         grain_loader = load_text_dataset(
             data_config, model_config, train_config, 
-            data_config.tokenizer_name, tokenizer.pad_token_id
+            data_config.tokenizer_name, tokenizer.pad_token_id,
+            use_optimized=use_optimized
         )
         
         load_time = time.time() - load_start
-        print(f"Grain loader created in {load_time:.2f} seconds")
+        print(f"{impl_name} loader created in {load_time:.2f} seconds")
         
         # Benchmark performance
-        results = benchmark_data_loader(grain_loader, "Grain", num_batches, is_tf=False)
+        results = benchmark_data_loader(grain_loader, impl_name, num_batches, is_tf=False)
         
         if results:
             results['load_time'] = load_time
-            print("✅ Grain data loading test completed successfully!")
+            print(f"✅ {impl_name} data loading test completed successfully!")
         
         return results
         
     except Exception as e:
-        print(f"❌ Error during Grain data loading test: {e}")
+        print(f"❌ Error during {impl_name} data loading test: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -212,30 +214,38 @@ def test_tf_fallback_data_loading(num_batches: int = 20):
         traceback.print_exc()
         return None
 
-def compare_results(grain_results, tf_results):
-    """Compare and analyze the performance results."""
+def compare_three_results(optimized_grain_results, original_grain_results, tf_results):
+    """Compare and analyze the performance results for all three implementations."""
     
-    print("\n" + "="*60)
-    print("DETAILED PERFORMANCE COMPARISON")
-    print("="*60)
+    print("\n" + "="*80)
+    print("COMPREHENSIVE PERFORMANCE COMPARISON")
+    print("="*80)
     
-    if not grain_results and not tf_results:
-        print("❌ Both implementations failed - no comparison possible")
+    results = [
+        ("Optimized Grain", optimized_grain_results),
+        ("Original Grain", original_grain_results), 
+        ("TensorFlow", tf_results)
+    ]
+    
+    # Filter out failed implementations
+    valid_results = [(name, res) for name, res in results if res is not None]
+    
+    if len(valid_results) == 0:
+        print("❌ All implementations failed - no comparison possible")
         return
     
-    if not grain_results:
-        print("❌ Grain failed, only TensorFlow results available")
-        print_single_results("TensorFlow", tf_results)
+    if len(valid_results) == 1:
+        name, res = valid_results[0]
+        print(f"Only {name} succeeded:")
+        print_single_results(name, res)
         return
     
-    if not tf_results:
-        print("❌ TensorFlow failed, only Grain results available")
-        print_single_results("Grain", grain_results)
-        return
-    
-    # Both implementations worked - do detailed comparison
-    print(f"{'Metric':<25} {'Grain':<15} {'TensorFlow':<15} {'Winner':<15}")
-    print("-" * 70)
+    # Multi-implementation comparison
+    print(f"{'Metric':<25}", end="")
+    for name, _ in valid_results:
+        print(f"{name:<18}", end="")
+    print("Winner")
+    print("-" * 100)
     
     metrics = [
         ('Load Time (s)', 'load_time', 'lower_better'),
@@ -248,51 +258,64 @@ def compare_results(grain_results, tf_results):
         ('Memory/batch (MB)', 'avg_memory_mb', 'lower_better'),
     ]
     
-    grain_wins = 0
-    tf_wins = 0
+    scores = {name: 0 for name, _ in valid_results}
     
     for metric_name, key, direction in metrics:
-        grain_val = grain_results[key]
-        tf_val = tf_results[key]
+        print(f"{metric_name:<25}", end="")
         
+        values = []
+        for name, res in valid_results:
+            val = res[key]
+            values.append((name, val))
+            print(f"{val:<18.4f}", end="")
+        
+        # Determine winner
         if direction == 'lower_better':
-            winner = "Grain" if grain_val < tf_val else "TensorFlow"
-            if grain_val < tf_val:
-                grain_wins += 1
-            else:
-                tf_wins += 1
+            winner_name, winner_val = min(values, key=lambda x: x[1])
         else:  # higher_better
-            winner = "Grain" if grain_val > tf_val else "TensorFlow"
-            if grain_val > tf_val:
-                grain_wins += 1
-            else:
-                tf_wins += 1
+            winner_name, winner_val = max(values, key=lambda x: x[1])
         
-        print(f"{metric_name:<25} {grain_val:<15.4f} {tf_val:<15.4f} {winner:<15}")
+        scores[winner_name] += 1
+        print(f"{winner_name}")
     
-    print("-" * 70)
-    print(f"{'SCORE':<25} {grain_wins:<15} {tf_wins:<15}")
+    print("-" * 100)
+    print(f"{'FINAL SCORES':<25}", end="")
+    for name, _ in valid_results:
+        print(f"{scores[name]:<18}", end="")
     
-    # Calculate key performance ratios
-    speedup = tf_results['avg_batch_time'] / grain_results['avg_batch_time']
-    throughput_ratio = grain_results['samples_per_second'] / tf_results['samples_per_second']
-    load_time_ratio = grain_results['load_time'] / tf_results['load_time']
+    # Determine overall winner
+    winner = max(scores.items(), key=lambda x: x[1])
+    print(f"{winner[0]} (Winner)")
     
-    print(f"\n📊 KEY PERFORMANCE METRICS:")
-    print(f"   Grain is {speedup:.2f}x {'faster' if speedup > 1 else 'slower'} per batch")
-    print(f"   Grain has {throughput_ratio:.2f}x {'higher' if throughput_ratio > 1 else 'lower'} throughput")
-    print(f"   Grain load time is {load_time_ratio:.2f}x {'longer' if load_time_ratio > 1 else 'shorter'}")
+    # Calculate performance ratios if we have all three
+    if len(valid_results) == 3:
+        opt_grain = next(res for name, res in valid_results if "Optimized" in name)
+        orig_grain = next(res for name, res in valid_results if "Original" in name) 
+        tf = next(res for name, res in valid_results if "TensorFlow" in name)
+        
+        print(f"\n📊 KEY PERFORMANCE COMPARISONS:")
+        
+        # Optimized Grain vs TensorFlow
+        opt_vs_tf_speed = tf['avg_batch_time'] / opt_grain['avg_batch_time']
+        opt_vs_tf_throughput = opt_grain['samples_per_second'] / tf['samples_per_second']
+        print(f"   Optimized Grain vs TensorFlow:")
+        print(f"     - {opt_vs_tf_speed:.2f}x {'faster' if opt_vs_tf_speed > 1 else 'slower'} per batch")
+        print(f"     - {opt_vs_tf_throughput:.2f}x {'higher' if opt_vs_tf_throughput > 1 else 'lower'} throughput")
+        
+        # Optimized vs Original Grain
+        opt_vs_orig_speed = orig_grain['avg_batch_time'] / opt_grain['avg_batch_time']
+        opt_vs_orig_throughput = opt_grain['samples_per_second'] / orig_grain['samples_per_second']
+        print(f"   Optimized Grain vs Original Grain:")
+        print(f"     - {opt_vs_orig_speed:.2f}x {'faster' if opt_vs_orig_speed > 1 else 'slower'} per batch")
+        print(f"     - {opt_vs_orig_throughput:.2f}x {'higher' if opt_vs_orig_throughput > 1 else 'lower'} throughput")
     
-    # Overall winner
-    if grain_wins > tf_wins:
-        print(f"\n🏆 OVERALL WINNER: Grain ({grain_wins}/{len(metrics)} metrics)")
-        print("   Recommendation: Use Grain for better performance")
-    elif tf_wins > grain_wins:
-        print(f"\n🏆 OVERALL WINNER: TensorFlow ({tf_wins}/{len(metrics)} metrics)")
-        print("   Recommendation: Use TensorFlow fallback for now")
+    print(f"\n🏆 RECOMMENDATION:")
+    if winner[0] == "Optimized Grain":
+        print("   Use the optimized Grain implementation for best performance!")
+    elif winner[0] == "TensorFlow":
+        print("   TensorFlow still performs best - consider using it for now")
     else:
-        print(f"\n🤝 TIE: Both implementations perform similarly")
-        print("   Recommendation: Choose based on other factors (ecosystem, features)")
+        print(f"   Use {winner[0]} for your data loading pipeline")
 
 def print_single_results(name, results):
     """Print results for a single implementation."""
@@ -307,25 +330,33 @@ def print_single_results(name, results):
     print(f"  Memory per batch: {results['avg_memory_mb']:.1f} MB")
 
 def main():
-    print("Data Loading Performance Comparison: Grain vs TensorFlow")
+    print("Comprehensive Data Loading Performance Comparison")
     print("="*60)
     print(f"JAX devices: {jax.devices()}")
     print(f"Configuration: batch_size=128, maxlen=256, num_batches=20")
     
-    # Test both implementations
-    grain_results = test_grain_data_loading(num_batches=20)
+    # Test all three implementations
+    print("\n🚀 Testing Optimized Grain Implementation...")
+    optimized_grain_results = test_grain_data_loading(num_batches=20, use_optimized=True)
+    
+    print("\n📊 Testing Original Grain Implementation...")
+    original_grain_results = test_grain_data_loading(num_batches=20, use_optimized=False)
+    
+    print("\n🔄 Testing TensorFlow Implementation...")
     tf_results = test_tf_fallback_data_loading(num_batches=20)
     
-    # Compare results
-    compare_results(grain_results, tf_results)
+    # Compare all results
+    compare_three_results(optimized_grain_results, original_grain_results, tf_results)
     
-    # Recommendations
+    # Final recommendations
     print(f"\n💡 OPTIMIZATION RECOMMENDATIONS:")
-    if grain_results:
-        print(f"   For Grain: Increase num_threads and cache_size for better performance")
+    if optimized_grain_results:
+        print(f"   For Optimized Grain: Further tune cache_size and num_threads based on your hardware")
+    if original_grain_results:
+        print(f"   For Original Grain: Consider using the optimized version instead")
     if tf_results:
-        print(f"   For TensorFlow: Consider using tf.data optimizations")
-    print(f"   General: Increase batch_size for better GPU utilization")
+        print(f"   For TensorFlow: Already well-optimized, consider tf.data.experimental.AUTOTUNE")
+    print(f"   General: Monitor memory usage and adjust batch_size accordingly")
 
 if __name__ == "__main__":
     main() 
