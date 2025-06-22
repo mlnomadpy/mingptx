@@ -10,7 +10,7 @@ from typing import Iterator, Dict, Any
 from config import DataConfig, ModelConfig, TrainConfig
 
 class TextDataSource(grain.RandomAccessDataSource):
-    """Efficient data source for streaming datasets."""
+    """Efficient data source for streaming datasets with dynamic cache updates."""
     
     def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int, d_config: DataConfig):
         self.dataset_name = dataset_name
@@ -27,37 +27,137 @@ class TextDataSource(grain.RandomAccessDataSource):
         self.dataset = load_dataset(dataset_name, split=split, streaming=True)
         self.dataset = self.dataset.shuffle(seed=d_config.shuffle_seed, buffer_size=d_config.shuffle_buffer_size)
         
-        # Convert to list for random access (cache a reasonable amount)
-        self._cache_size = d_config.cache_size  # Use config value instead of hardcoded
+        # Create an iterator for the dataset
+        self.dataset_iter = iter(self.dataset)
+        
+        # Dynamic cache configuration
+        self._cache_size = d_config.cache_size
         self._data_cache = []
+        self._cache_refresh_rate = d_config.cache_refresh_rate
+        self._cache_refresh_interval = d_config.cache_refresh_interval
+        self._total_accessed = 0
+        self._cache_generation = 0
+        
+        # Populate initial cache
         self._populate_cache()
     
     def _populate_cache(self):
         """Populate cache with tokenized data."""
-        print(f"Populating cache with {self._cache_size} examples...")
-        for i, example in enumerate(self.dataset):
-            if i >= self._cache_size:
-                break
-            
-            # Tokenize directly to numpy arrays
-            tokens = self.tokenizer(
-                example["text"],
-                truncation=True,
-                padding="max_length",
-                max_length=self.max_length,
-                return_tensors="np"
-            )
-            
-            # Store just the input_ids as a flat array
-            self._data_cache.append(tokens['input_ids'].squeeze(0).astype(np.int32))
+        print(f"Populating cache (generation {self._cache_generation}) with {self._cache_size} examples...")
+        self._data_cache.clear()
+        
+        examples_added = 0
+        try:
+            for example in self.dataset_iter:
+                if examples_added >= self._cache_size:
+                    break
+                
+                # Tokenize directly to numpy arrays
+                tokens = self.tokenizer(
+                    example["text"],
+                    truncation=True,
+                    padding="max_length",
+                    max_length=self.max_length,
+                    return_tensors="np"
+                )
+                
+                # Store just the input_ids as a flat array
+                self._data_cache.append(tokens['input_ids'].squeeze(0).astype(np.int32))
+                examples_added += 1
+                
+        except StopIteration:
+            # If we run out of data, recreate the iterator
+            print("Reached end of dataset, recreating iterator...")
+            self.dataset_iter = iter(self.dataset)
+            # Try to fill the remaining cache
+            for example in self.dataset_iter:
+                if examples_added >= self._cache_size:
+                    break
+                
+                tokens = self.tokenizer(
+                    example["text"],
+                    truncation=True,
+                    padding="max_length",
+                    max_length=self.max_length,
+                    return_tensors="np"
+                )
+                
+                self._data_cache.append(tokens['input_ids'].squeeze(0).astype(np.int32))
+                examples_added += 1
         
         print(f"Cache populated with {len(self._data_cache)} examples")
+        self._cache_generation += 1
+    
+    def _refresh_cache_partially(self):
+        """Refresh a portion of the cache with new data."""
+        if len(self._data_cache) == 0:
+            self._populate_cache()
+            return
+            
+        refresh_count = min(self._cache_refresh_rate, len(self._data_cache))
+        print(f"Refreshing {refresh_count} cache entries...")
+        
+        # Remove old entries from random positions
+        import random
+        random.seed(self.d_config.shuffle_seed + self._cache_generation)
+        indices_to_replace = random.sample(range(len(self._data_cache)), refresh_count)
+        
+        # Add new entries
+        new_entries = []
+        try:
+            for _ in range(refresh_count):
+                example = next(self.dataset_iter)
+                tokens = self.tokenizer(
+                    example["text"],
+                    truncation=True,
+                    padding="max_length",
+                    max_length=self.max_length,
+                    return_tensors="np"
+                )
+                new_entries.append(tokens['input_ids'].squeeze(0).astype(np.int32))
+        except StopIteration:
+            # Recreate iterator if we reach the end
+            self.dataset_iter = iter(self.dataset)
+            remaining = refresh_count - len(new_entries)
+            for _ in range(remaining):
+                try:
+                    example = next(self.dataset_iter)
+                    tokens = self.tokenizer(
+                        example["text"],
+                        truncation=True,
+                        padding="max_length",
+                        max_length=self.max_length,
+                        return_tensors="np"
+                    )
+                    new_entries.append(tokens['input_ids'].squeeze(0).astype(np.int32))
+                except StopIteration:
+                    break
+        
+        # Replace old entries with new ones
+        for i, new_entry in zip(indices_to_replace[:len(new_entries)], new_entries):
+            self._data_cache[i] = new_entry
     
     def __len__(self):
         return len(self._data_cache)
     
     def __getitem__(self, index):
+        self._total_accessed += 1
+        
+        # Periodically refresh part of the cache to see new data
+        if self._total_accessed % (self._cache_size * self._cache_refresh_interval) == 0:
+            self._refresh_cache_partially()
+        
         return self._data_cache[index % len(self._data_cache)]
+
+    def get_cache_stats(self):
+        """Get statistics about the cache for debugging."""
+        return {
+            'cache_size': len(self._data_cache),
+            'total_accessed': self._total_accessed,
+            'cache_generation': self._cache_generation,
+            'refresh_rate': self._cache_refresh_rate,
+            'refresh_interval': self._cache_refresh_interval
+        }
 
 def create_input_target_transform(pad_token_id: int):
     """Transform that creates input/target pairs efficiently."""

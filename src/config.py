@@ -26,6 +26,8 @@ class DataConfig:
     shuffle_seed: int = 42
     shuffle_buffer_size: int = 10_000
     cache_size: int = 10_000
+    cache_refresh_rate: int = 1000  # How many examples to refresh in cache each time
+    cache_refresh_interval: int = 2  # Refresh cache every N full cache cycles
     num_threads: int = 2
     prefetch_buffer_size: int = 50
     tokenization_batch_size: int = 1000
