@@ -92,6 +92,7 @@ def parse_args():
     parser.add_argument("--debug", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "debug", train_config_defaults.debug), help="Enable or disable debug prints.")
     parser.add_argument("--run_generation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "run_generation", train_config_defaults.run_generation), help="Whether to run text generation.")
     parser.add_argument("--log_determinants", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_determinants", train_config_defaults.log_determinants), help="Whether to log matrix determinants.")
+    parser.add_argument("--log_gradients", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_gradients", train_config_defaults.log_gradients), help="Whether to log gradient norms.")
     
     # Now parse all arguments
     args = parser.parse_args()
@@ -131,7 +132,8 @@ def parse_args():
             checkpoint_dir=args.checkpoint_dir,
             debug=args.debug,
             run_generation=args.run_generation,
-            log_determinants=args.log_determinants
+            log_determinants=args.log_determinants,
+            log_gradients=args.log_gradients
         )
     )
     return config
@@ -183,7 +185,11 @@ def main():
         (loss, _), grads = grad_fn(mdl, b)
         mets.update(loss=loss)
         opt.update(grads)
-        grad_norms = jax.tree_util.tree_map(lambda x: jnp.linalg.norm(x) if x is not None else 0.0, grads)
+
+        grad_norms = None
+        if config.train_config.log_gradients:
+            grad_norms = jax.tree_util.tree_map(lambda x: jnp.linalg.norm(x) if x is not None else 0.0, grads)
+        
         return grad_norms
 
     # Initial text generation
@@ -220,8 +226,9 @@ def main():
                 
                 log_metrics = {'train_loss': loss_value, 'elapsed_time': elapsed_time}
                 
-                flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
-                log_metrics.update(flat_grad_norms)
+                if config.train_config.log_gradients and grad_norms is not None:
+                    flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
+                    log_metrics.update(flat_grad_norms)
 
                 if config.train_config.log_determinants:
                     flat_determinants = get_flat_determinants(model, debug=config.train_config.debug)

@@ -32,4 +32,5 @@ train_config:
   checkpoint_dir: 'checkpoints'
   debug: false
   run_generation: true
-  log_determinants: false 
+  log_determinants: false
+  log_gradients: false 

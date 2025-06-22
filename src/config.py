@@ -40,6 +40,7 @@ class TrainConfig:
     debug: bool = False
     run_generation: bool = True
     log_determinants: bool = False
+    log_gradients: bool = False
 
 @dataclass
 class ProjectConfig:
