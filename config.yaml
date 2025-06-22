@@ -18,14 +18,15 @@ data_config:
   batch_size: 256
   tokenizer_name: "gpt2"
   # Data loading configuration
+  loader: "tf"  # 'grain' or 'tf'
+  use_cache: true # Whether to cache the dataset. Applies to both loaders.
   shuffle_seed: 42
   shuffle_buffer_size: 10000
-  cache_size: 100000
+  cache_size: 100000 # Used only for the 'grain' loader's cache.
   num_threads: 4
   prefetch_buffer_size: 50
   tokenization_batch_size: 1000
   use_fast_tokenizer: true
-  loader: "tf"  # 'grain' or 'tf'
 
 train_config:
   optimizer_name: "adamw"

@@ -115,6 +115,38 @@ class TextDataSource(grain.RandomAccessDataSource):
             'cache_generation': self._cache_generation,
         }
 
+# This is a streaming data source for Grain
+class StreamingTextDataSource(grain.RandomAccessDataSource):
+    """A streaming data source for Grain that tokenizes on the fly."""
+    def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int, d_config: DataConfig):
+        self.dataset_name = dataset_name
+        self.split = split
+        self.max_length = max_length
+        self.d_config = d_config
+
+        # Load tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=d_config.use_fast_tokenizer)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # Load dataset in streaming mode and wrap it as an indexable list
+        dataset = load_dataset(dataset_name, split=split, streaming=True)
+        self.dataset = list(dataset.take(d_config.shuffle_buffer_size))
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, index):
+        example = self.dataset[index]
+        tokens = self.tokenizer(
+            example["text"],
+            truncation=True,
+            padding="max_length",
+            max_length=self.max_length,
+            return_tensors="np"
+        )
+        return tokens['input_ids'].squeeze(0).astype(np.int32)
+
 def create_input_target_transform(pad_token_id: int):
     """Transform that creates input/target pairs efficiently."""
     
@@ -140,11 +172,11 @@ def create_input_target_transform(pad_token_id: int):
 def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
     """Loads dataset using the loader specified in the config."""
     loader_name = str(d_config.loader).strip().lower()
-    
+
     if loader_name == 'grain':
         return load_text_dataset_grain(d_config, m_config, t_config, tokenizer_name, pad_token_id)
     elif loader_name == 'tf':
-        return load_text_dataset_tf_fallback(d_config, m_config, t_config, tokenizer_name, pad_token_id)
+        return load_text_dataset_tf(d_config, m_config, t_config, tokenizer_name, pad_token_id)
     else:
         raise ValueError(f"Unknown data loader: '{d_config.loader}'. Must be 'grain' or 'tf'.")
 
@@ -156,15 +188,26 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
     - Optimized memory usage
     """
     
-    # Create data source
-    data_source = TextDataSource(
-        dataset_name=d_config.dataset_name,
-        split=d_config.split,
-        tokenizer_name=tokenizer_name,
-        max_length=m_config.maxlen,
-        d_config=d_config
-    )
-    
+    # Create data source based on whether caching is enabled
+    if d_config.use_cache:
+        print("Using caching Grain data source.")
+        data_source = TextDataSource(
+            dataset_name=d_config.dataset_name,
+            split=d_config.split,
+            tokenizer_name=tokenizer_name,
+            max_length=m_config.maxlen,
+            d_config=d_config
+        )
+    else:
+        print("Using streaming Grain data source.")
+        data_source = StreamingTextDataSource(
+            dataset_name=d_config.dataset_name,
+            split=d_config.split,
+            tokenizer_name=tokenizer_name,
+            max_length=m_config.maxlen,
+            d_config=d_config
+        )
+
     # Create input/target transformation
     transform = create_input_target_transform(pad_token_id)
     
@@ -183,11 +226,11 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
     
     return iter_dataset
 
-# Backward compatibility function for TensorFlow-based loading (if needed)
-def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
+# Main function for TensorFlow-based loading
+def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
     """
-    Fallback to TensorFlow-based loading if Grain has issues.
-    This is the original implementation with some optimizations.
+    TensorFlow-based data loading pipeline.
+    Supports both streaming and caching.
     """
     import tensorflow as tf
     
@@ -250,6 +293,11 @@ def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t
     # Batch and prefetch the dataset for performance.
     tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
     
+    # Enable caching if specified in config
+    if d_config.use_cache:
+        print("Enabling tf.data caching.")
+        tf_dataset = tf_dataset.cache()
+
     # Create the padding tensor once to avoid overhead in the map function.
     pad_tensor = tf.constant(pad_token_id, shape=(d_config.batch_size, 1), dtype=tf.int32)
 

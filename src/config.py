@@ -23,14 +23,15 @@ class DataConfig:
     batch_size: int = 256
     tokenizer_name: str = 'gpt2'
     # Data loading configuration
+    loader: str = "grain"  # 'grain' or 'tf'
+    use_cache: bool = True  # Whether to cache the dataset. Applies to both 'grain' and 'tf' loaders.
     shuffle_seed: int = 42
     shuffle_buffer_size: int = 10_000
-    cache_size: int = 10_000
+    cache_size: int = 10_000  # Used only for the 'grain' loader's cache.
     num_threads: int = 2
     prefetch_buffer_size: int = 50
     tokenization_batch_size: int = 1000
     use_fast_tokenizer: bool = True
-    loader: str = "grain"  # 'grain' or 'tf'
 
 @dataclass
 class TrainConfig:
