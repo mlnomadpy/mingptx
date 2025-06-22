@@ -267,7 +267,7 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
 # Main function for TensorFlow-based loading
 def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
     """
-    TensorFlow-based data loading pipeline, simplified using to_tf_dataset.
+    TensorFlow-based data loading pipeline, that works with older and newer versions of `datasets`.
     Supports both streaming and shuffling.
     """
     import tensorflow as tf
@@ -277,18 +277,17 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=d_config.use_fast_tokenizer)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    
+
     # streaming=True returns an IterableDataset
     hf_dataset = load_dataset(d_config.dataset_name, split=d_config.split, streaming=True)
 
     def tokenize_function(examples):
-        # The tokenizer returns TensorFlow tensors.
+        # We'll handle tensor conversion in the generator.
         return tokenizer(
             examples["text"],
             truncation=True,
             padding="max_length",
             max_length=m_config.maxlen,
-            return_tensors="tf",
         )
 
     # The map function is applied on-the-fly.
@@ -298,17 +297,25 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
         remove_columns=["text"]
     )
     
-    # Remove attention_mask as it's not needed for this model.
+    # We only need 'input_ids' for the model input.
+    # The 'attention_mask' is also available if your model uses it.
     tokenized_dataset = tokenized_dataset.remove_columns(["attention_mask"])
 
-    # Convert to a tf.data.Dataset
-    tf_dataset = tokenized_dataset.to_tf_dataset(
-        columns=['input_ids'],
-        batch_size=d_config.batch_size,
-        shuffle=True,
-        shuffle_buffer_size=d_config.shuffle_buffer_size,
-        prefetch=True,
-        drop_remainder=True
+    # Use a generator to feed data to tf.data.Dataset, which is compatible with IterableDataset
+    def data_generator():
+        for batch in tokenized_dataset:
+            # Yield each example in the batch
+            for i in range(len(batch['input_ids'])):
+                yield {'input_ids': batch['input_ids'][i]}
+
+    # Define the output signature for the generator
+    output_signature = {
+        'input_ids': tf.TensorSpec(shape=(m_config.maxlen,), dtype=tf.int32)
+    }
+
+    tf_dataset = tf.data.Dataset.from_generator(
+        data_generator,
+        output_signature=output_signature
     )
 
     # Enable caching if specified in config
@@ -316,10 +323,16 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
         print("Enabling tf.data caching.")
         tf_dataset = tf_dataset.cache()
 
+    # Shuffle, batch, and create targets
+    if d_config.shuffle_buffer_size and d_config.shuffle_buffer_size > 0:
+        tf_dataset = tf_dataset.shuffle(d_config.shuffle_buffer_size)
+    
+    tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
+
     def create_inputs_and_targets(batch):
         input_ids = batch['input_ids']
         # Create target by shifting input
-        target_ids = tf.concat([input_ids[:, 1:], tf.fill((d_config.batch_size, 1), pad_token_id)], axis=1)
+        target_ids = tf.concat([input_ids[:, 1:], tf.fill((d_config.batch_size, 1), pad_token_id, dtype=tf.int32)], axis=1)
         # The model expects (maxlen, batch_size), so we transpose.
         input_batch = tf.transpose(input_ids)
         target_batch = tf.transpose(target_ids)
