@@ -13,8 +13,8 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.config import DataConfig, ModelConfig, TrainConfig
-from src.dataset import load_text_dataset
+from config import DataConfig, ModelConfig, TrainConfig
+from dataset import load_text_dataset
 
 def test_grain_data_loading():
     """Test the Grain-based data loading implementation."""
