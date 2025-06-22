@@ -11,6 +11,7 @@ model_config:
   use_dropconnect: False
   use_softermax: True
   power: 1.0
+  use_activation: False
 
 data_config:
   dataset_name: "Kunj07/openwebtext"

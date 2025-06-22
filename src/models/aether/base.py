@@ -6,12 +6,15 @@ from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from config import ModelConfig
 from nmn.nnx.yatattention import MultiHeadAttention
 from nmn.nnx.nmn import YatNMN
+from nmn.nnx.squash.softer_sigmoid import softer_sigmoid
 
 def causal_attention_mask(seq_len):
     return jnp.tril(jnp.ones((seq_len, seq_len)))
 
 class TransformerBlock(nnx.Module):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
+        self.use_activation = config.use_activation
+        
         self.mha = MultiHeadAttention(
             num_heads=config.num_heads,
             in_features=config.embed_dim,
@@ -55,10 +58,17 @@ class TransformerBlock(nnx.Module):
         _, seq_len, _ = inputs.shape
         mask = causal_attention_mask(seq_len)
         attention_output = self.mha(inputs_q=inputs, mask=mask, decode=False, deterministic=not training)
+        if self.use_activation:
+            attention_output = softer_sigmoid(attention_output)
+
         attention_output = self.dropout1(attention_output, deterministic=not training)
         out1 = inputs + attention_output
         
         ffn_output = self.non_linear1(out1)
+        if self.use_activation:
+            attention_output = softer_sigmoid(ffn_output)
+            
+
         # ffn_output = self.non_linear2(ffn_output)
         ffn_output = self.dropout2(ffn_output, deterministic=not training)
         return out1 + ffn_output

@@ -14,6 +14,7 @@ class ModelConfig:
     use_dropconnect: bool = False
     use_softermax: bool = False
     power: float = 1.0
+    use_activation: bool = False
 
 @dataclass
 class DataConfig:
