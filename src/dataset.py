@@ -1,15 +1,17 @@
 import jax
 import jax.numpy as jnp
-import grain.python as grain
+import grain.python as pygrain
 from datasets import load_dataset
 from transformers import AutoTokenizer
 from functools import lru_cache
 import numpy as np
 from typing import Iterator, Dict, Any
+from dataclasses import dataclass
 
 from config import DataConfig, ModelConfig, TrainConfig
 
-class TextDataSource(grain.RandomAccessDataSource):
+@dataclass
+class TextDataSource:
     """Efficient data source for streaming datasets."""
     
     def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int):
@@ -27,7 +29,7 @@ class TextDataSource(grain.RandomAccessDataSource):
         self.dataset = self.dataset.shuffle(seed=42, buffer_size=10_000)
         
         # Convert to list for random access (cache a reasonable amount)
-        self._cache_size = 100_000  # Adjust based on memory
+        self._cache_size = 10_000  # Reduced for faster testing - adjust based on memory
         self._data_cache = []
         self._populate_cache()
     
@@ -47,9 +49,8 @@ class TextDataSource(grain.RandomAccessDataSource):
                 return_tensors="np"
             )
             
-            self._data_cache.append({
-                'input_ids': tokens['input_ids'].squeeze(0).astype(np.int32)
-            })
+            # Store just the input_ids as a flat array
+            self._data_cache.append(tokens['input_ids'].squeeze(0).astype(np.int32))
         
         print(f"Cache populated with {len(self._data_cache)} examples")
     
@@ -63,13 +64,8 @@ def create_input_target_transform(pad_token_id: int):
     """Transform that creates input/target pairs efficiently."""
     
     def transform(batch):
-        # Handle both single examples and batches
-        if isinstance(batch, dict):
-            # Batched data from Grain
-            input_ids = batch['input_ids']  # Shape: (batch_size, seq_len)
-        else:
-            # Single example - convert to batch format
-            input_ids = np.array([batch['input_ids']])
+        # batch is now a numpy array of shape (batch_size, seq_len)
+        input_ids = np.array(batch)
         
         # Create targets by shifting input (vectorized operation)
         targets = np.concatenate([
@@ -103,10 +99,11 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
     )
     
     # Create sampler with shuffling
-    sampler = grain.IndexSampler(
+    sampler = pygrain.IndexSampler(
         num_records=len(data_source),
         shuffle=True,
         seed=42,
+        shard_options=pygrain.NoSharding(),
         num_epochs=t_config.num_epochs
     )
     
@@ -114,19 +111,15 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
     transform = create_input_target_transform(pad_token_id)
     
     # Create data loader with transformations (including batching)
-    loader = grain.DataLoader(
+    loader = pygrain.DataLoader(
         data_source=data_source,
         sampler=sampler,
         operations=[
-            grain.Batch(d_config.batch_size, drop_remainder=True),
-            grain.Map(transform)
+            pygrain.Batch(batch_size=d_config.batch_size, drop_remainder=True),
+            pygrain.Map(transform)
         ],
-        worker_count=4,  # Adjust based on CPU cores
+        worker_count=0,  # Start with 0 for debugging, increase later
         worker_buffer_size=100,  # Prefetch buffer per worker
-        read_options=grain.ReadOptions(
-            num_threads=2,  # Threads per worker for I/O
-            prefetch_buffer_size=50
-        )
     )
     
     return loader
