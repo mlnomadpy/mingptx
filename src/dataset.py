@@ -62,8 +62,14 @@ class TextDataSource(grain.RandomAccessDataSource):
 def create_input_target_transform(pad_token_id: int):
     """Transform that creates input/target pairs efficiently."""
     
-    def transform(batch: Dict[str, np.ndarray]) -> tuple[jnp.ndarray, jnp.ndarray]:
-        input_ids = batch['input_ids']  # Shape: (batch_size, seq_len)
+    def transform(batch):
+        # Handle both single examples and batches
+        if isinstance(batch, dict):
+            # Batched data from Grain
+            input_ids = batch['input_ids']  # Shape: (batch_size, seq_len)
+        else:
+            # Single example - convert to batch format
+            input_ids = np.array([batch['input_ids']])
         
         # Create targets by shifting input (vectorized operation)
         targets = np.concatenate([
@@ -104,10 +110,17 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
         num_epochs=t_config.num_epochs
     )
     
-    # Create data loader with optimizations
+    # Create input/target transformation
+    transform = create_input_target_transform(pad_token_id)
+    
+    # Create data loader with transformations (including batching)
     loader = grain.DataLoader(
         data_source=data_source,
         sampler=sampler,
+        operations=[
+            grain.Batch(d_config.batch_size, drop_remainder=True),
+            grain.Map(transform)
+        ],
         worker_count=4,  # Adjust based on CPU cores
         worker_buffer_size=100,  # Prefetch buffer per worker
         read_options=grain.ReadOptions(
@@ -115,13 +128,6 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
             prefetch_buffer_size=50
         )
     )
-    
-    # Apply batching
-    loader = loader.batch(d_config.batch_size, drop_remainder=True)
-    
-    # Apply input/target transformation
-    transform = create_input_target_transform(pad_token_id)
-    loader = loader.map(transform)
     
     return loader
 
