@@ -10,8 +10,8 @@ import jax.numpy as jnp
 from transformers import AutoTokenizer
 import argparse
 
-from src.config import DataConfig, ModelConfig, TrainConfig
-from src.dataset import load_text_dataset, load_text_dataset_tf_fallback
+from config import DataConfig, ModelConfig, TrainConfig
+from dataset import load_text_dataset, load_text_dataset_tf_fallback
 
 def benchmark_data_loader(loader, name: str, num_batches: int = 100):
     """Benchmark a data loader by measuring time to iterate through batches."""
