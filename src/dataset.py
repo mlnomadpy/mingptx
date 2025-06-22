@@ -191,12 +191,14 @@ def create_input_target_transform(pad_token_id: int):
 
 def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
     """Loads dataset using the loader specified in the config."""
-    if d_config.loader == 'grain':
+    loader_name = str(d_config.loader).strip().lower()
+    
+    if loader_name == 'grain':
         return load_text_dataset_grain(d_config, m_config, t_config, tokenizer_name, pad_token_id)
-    elif d_config.loader == 'tf':
+    elif loader_name == 'tf':
         return load_text_dataset_tf_fallback(d_config, m_config, t_config, tokenizer_name, pad_token_id)
     else:
-        raise ValueError(f"Unknown data loader: {d_config.loader}")
+        raise ValueError(f"Unknown data loader: '{d_config.loader}'. Must be 'grain' or 'tf'.")
 
 def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
     """
