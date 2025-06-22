@@ -316,4 +316,4 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
     )
     tf_dataset = tf_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     
-    return tf_dataset.as_numpy_iterator() 
+    return tf_dataset 

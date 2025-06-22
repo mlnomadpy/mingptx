@@ -229,7 +229,11 @@ def main():
 
     for epoch in range(config.train_config.num_epochs):
         start_time = time.time()
-        for batch_data in text_dl:
+
+        # Get a new iterator for each epoch if the data loader is a tf.data.Dataset
+        data_iterator = text_dl.as_numpy_iterator() if hasattr(text_dl, 'as_numpy_iterator') else text_dl
+
+        for batch_data in data_iterator:
 
             if mesh:
                 # Shard the batch dimension (axis 1) across the 'batch' mesh axis
