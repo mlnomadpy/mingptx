@@ -123,21 +123,64 @@ class StreamingTextDataSource(grain.RandomAccessDataSource):
         self.split = split
         self.max_length = max_length
         self.d_config = d_config
+        self._generation = 0
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=d_config.use_fast_tokenizer)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # Load dataset in streaming mode and wrap it as an indexable list
-        dataset = load_dataset(dataset_name, split=split, streaming=True)
-        self.dataset = list(dataset.take(d_config.shuffle_buffer_size))
+        # Load dataset in streaming mode and create an iterator
+        self.hf_dataset = load_dataset(dataset_name, split=split, streaming=True)
+        self._reseed_and_reshuffle()
+        
+        # Internal buffer to hold a chunk of the dataset
+        self.buffer = []
+        self._populate_buffer()
+    
+    def _reseed_and_reshuffle(self):
+        """Reshuffles the dataset with a new seed."""
+        # Use a new seed for each pass through the data
+        seed = self.d_config.shuffle_seed + self._generation
+        print(f"Reshuffling dataset with seed {seed}")
+        self.hf_dataset = self.hf_dataset.shuffle(seed=seed, buffer_size=self.d_config.shuffle_buffer_size)
+        self.hf_iterator = iter(self.hf_dataset)
+        self._generation += 1
+
+    def _populate_buffer(self):
+        """Fills the internal buffer with new examples from the dataset iterator."""
+        self.buffer.clear()
+        try:
+            for _ in range(self.d_config.shuffle_buffer_size):
+                self.buffer.append(next(self.hf_iterator))
+        except StopIteration:
+            print("Dataset iterator exhausted. Reshuffling...")
+            self._reseed_and_reshuffle()
+            # Try to populate again after reshuffling
+            for _ in range(self.d_config.shuffle_buffer_size):
+                try:
+                    self.buffer.append(next(self.hf_iterator))
+                except StopIteration:
+                    # If it's still exhausted, the dataset is likely smaller than buffer size
+                    break
+        
+        if not self.buffer:
+            raise IndexError("Unable to populate data buffer. The dataset might be empty or too small.")
 
     def __len__(self):
-        return len(self.dataset)
+        # The effective length is the size of our current buffer
+        return len(self.buffer)
 
     def __getitem__(self, index):
-        example = self.dataset[index]
+        # When grain asks for an index, it's from the current buffer.
+        # If index is out of bounds, it means grain has exhausted our buffer and we need to refill it.
+        # This simplistic check might not be robust for all of grain's access patterns,
+        # but for a standard sequential iteration it works.
+        if index >= len(self.buffer):
+            self._populate_buffer()
+        
+        # Get example from the in-memory buffer
+        example = self.buffer[index]
         tokens = self.tokenizer(
             example["text"],
             truncation=True,
@@ -224,31 +267,22 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
 # Main function for TensorFlow-based loading
 def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
     """
-    TensorFlow-based data loading pipeline.
-    Supports both streaming and caching.
+    TensorFlow-based data loading pipeline, simplified using to_tf_dataset.
+    Supports both streaming and shuffling.
     """
     import tensorflow as tf
+    from transformers import AutoTokenizer
+
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=d_config.use_fast_tokenizer)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     
     # streaming=True returns an IterableDataset
     hf_dataset = load_dataset(d_config.dataset_name, split=d_config.split, streaming=True)
 
-    # Shuffle the dataset. For streaming, this uses a buffer of elements.
-    hf_dataset = hf_dataset.shuffle(seed=d_config.shuffle_seed, buffer_size=d_config.shuffle_buffer_size)
-
-    @lru_cache(maxsize=None)
-    def get_tokenizer(name):
-        """
-        Loads and caches the tokenizer.
-        Each worker process will have its own cached tokenizer.
-        """
-        tokenizer = AutoTokenizer.from_pretrained(name, use_fast=d_config.use_fast_tokenizer)  # Use config value
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        return tokenizer
-
     def tokenize_function(examples):
         # The tokenizer returns TensorFlow tensors.
-        tokenizer = get_tokenizer(tokenizer_name)
         return tokenizer(
             examples["text"],
             truncation=True,
@@ -257,49 +291,35 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
             return_tensors="tf",
         )
 
-    # The map function is applied on-the-fly to batches of examples.
+    # The map function is applied on-the-fly.
     tokenized_dataset = hf_dataset.map(
         tokenize_function, 
         batched=True,
-        batch_size=d_config.tokenization_batch_size,  # Use config value instead of hardcoded 1000
-        remove_columns=list(hf_dataset.features) if hf_dataset.features else None
+        remove_columns=["text"]
     )
     
-    # We only need 'input_ids' for the model, so we remove other columns.
-    # The training script expects batches with 'input_ids'.
+    # Remove attention_mask as it's not needed for this model.
     tokenized_dataset = tokenized_dataset.remove_columns(["attention_mask"])
 
-    # Create a tf.data.Dataset from the Hugging Face IterableDataset.
-    def data_generator():
-        for record in tokenized_dataset:
-            yield {'input_ids': record['input_ids']}
-
-    # The output from the generator will be a dictionary. The training loop
-    # expects 'input_ids'.
-    output_signature = {
-        'input_ids': tf.TensorSpec(shape=(m_config.maxlen,), dtype=tf.int32)
-    }
-
-    tf_dataset = tf.data.Dataset.from_generator(
-        data_generator,
-        output_signature=output_signature
+    # Convert to a tf.data.Dataset
+    tf_dataset = tokenized_dataset.to_tf_dataset(
+        columns=['input_ids'],
+        batch_size=d_config.batch_size,
+        shuffle=True,
+        shuffle_buffer_size=d_config.shuffle_buffer_size,
+        prefetch=True,
+        drop_remainder=True
     )
 
-    # Batch and prefetch the dataset for performance.
-    tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
-    
     # Enable caching if specified in config
     if d_config.use_cache:
         print("Enabling tf.data caching.")
         tf_dataset = tf_dataset.cache()
 
-    # Create the padding tensor once to avoid overhead in the map function.
-    pad_tensor = tf.constant(pad_token_id, shape=(d_config.batch_size, 1), dtype=tf.int32)
-
     def create_inputs_and_targets(batch):
         input_ids = batch['input_ids']
-        # Create target by shifting input, reusing the pre-made pad_tensor.
-        target_ids = tf.concat([input_ids[:, 1:], pad_tensor], axis=1)
+        # Create target by shifting input
+        target_ids = tf.concat([input_ids[:, 1:], tf.fill((d_config.batch_size, 1), pad_token_id)], axis=1)
         # The model expects (maxlen, batch_size), so we transpose.
         input_batch = tf.transpose(input_ids)
         target_batch = tf.transpose(target_ids)
