@@ -22,6 +22,14 @@ class DataConfig:
     validation_split_name: str = 'validation'
     batch_size: int = 256
     tokenizer_name: str = 'gpt2'
+    # Data loading configuration
+    shuffle_seed: int = 42
+    shuffle_buffer_size: int = 10_000
+    cache_size: int = 10_000
+    num_threads: int = 2
+    prefetch_buffer_size: int = 50
+    tokenization_batch_size: int = 1000
+    use_fast_tokenizer: bool = True
 
 @dataclass
 class TrainConfig:

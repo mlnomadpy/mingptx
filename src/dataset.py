@@ -12,22 +12,23 @@ from config import DataConfig, ModelConfig, TrainConfig
 class TextDataSource(grain.RandomAccessDataSource):
     """Efficient data source for streaming datasets."""
     
-    def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int):
+    def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int, d_config: DataConfig):
         self.dataset_name = dataset_name
         self.split = split
         self.max_length = max_length
+        self.d_config = d_config
         
         # Load tokenizer once
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=d_config.use_fast_tokenizer)
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         
         # Load dataset in streaming mode
         self.dataset = load_dataset(dataset_name, split=split, streaming=True)
-        self.dataset = self.dataset.shuffle(seed=42, buffer_size=10_000)
+        self.dataset = self.dataset.shuffle(seed=d_config.shuffle_seed, buffer_size=d_config.shuffle_buffer_size)
         
         # Convert to list for random access (cache a reasonable amount)
-        self._cache_size = 10_000  # Reduced for faster testing - adjust based on memory
+        self._cache_size = d_config.cache_size  # Use config value instead of hardcoded
         self._data_cache = []
         self._populate_cache()
     
@@ -93,7 +94,8 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
         dataset_name=d_config.dataset_name,
         split=d_config.split,
         tokenizer_name=tokenizer_name,
-        max_length=m_config.maxlen
+        max_length=m_config.maxlen,
+        d_config=d_config
     )
     
     # Create input/target transformation
@@ -102,14 +104,14 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
     # Create dataset using Grain's chaining API
     dataset = (
         grain.MapDataset.source(data_source)
-        .shuffle(seed=42)
+        .shuffle(seed=d_config.shuffle_seed)
         .batch(batch_size=d_config.batch_size)
         .map(transform)
     )
     
     # Convert to iterable dataset for training
     iter_dataset = dataset.to_iter_dataset(
-        grain.ReadOptions(num_threads=2, prefetch_buffer_size=50)
+        grain.ReadOptions(num_threads=d_config.num_threads, prefetch_buffer_size=d_config.prefetch_buffer_size)
     )
     
     return iter_dataset
@@ -126,7 +128,7 @@ def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t
     hf_dataset = load_dataset(d_config.dataset_name, split=d_config.split, streaming=True)
 
     # Shuffle the dataset. For streaming, this uses a buffer of elements.
-    hf_dataset = hf_dataset.shuffle(seed=42, buffer_size=10_000)
+    hf_dataset = hf_dataset.shuffle(seed=d_config.shuffle_seed, buffer_size=d_config.shuffle_buffer_size)
 
     @lru_cache(maxsize=None)
     def get_tokenizer(name):
@@ -134,7 +136,7 @@ def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t
         Loads and caches the tokenizer.
         Each worker process will have its own cached tokenizer.
         """
-        tokenizer = AutoTokenizer.from_pretrained(name, use_fast=True)  # Use fast tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(name, use_fast=d_config.use_fast_tokenizer)  # Use config value
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         return tokenizer
@@ -154,7 +156,7 @@ def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t
     tokenized_dataset = hf_dataset.map(
         tokenize_function, 
         batched=True,
-        batch_size=1000,  # Larger batch size for tokenization
+        batch_size=d_config.tokenization_batch_size,  # Use config value instead of hardcoded 1000
         remove_columns=hf_dataset.column_names
     )
     
