@@ -73,6 +73,7 @@ def parse_args():
     data_config_defaults = default_config.data_config
     parser.add_argument("--dataset_name", type=str, default=get_config_value("data_config", "dataset_name", data_config_defaults.dataset_name), help="Hugging Face dataset name.")
     parser.add_argument("--split", type=str, default=get_config_value("data_config", "split", data_config_defaults.split), help="Dataset split to use.")
+    parser.add_argument("--validation_split_name", type=str, default=get_config_value("data_config", "validation_split_name", data_config_defaults.validation_split_name), help="Dataset validation split to use.")
     parser.add_argument("--batch_size", type=int, default=get_config_value("data_config", "batch_size", data_config_defaults.batch_size), help="Batch size for training.")
     parser.add_argument("--tokenizer_name", type=str, default=get_config_value("data_config", "tokenizer_name", data_config_defaults.tokenizer_name), help="Tokenizer to use.")
     parser.add_argument("--shuffle_seed", type=int, default=get_config_value("data_config", "shuffle_seed", data_config_defaults.shuffle_seed), help="Seed for dataset shuffling.")
@@ -84,7 +85,7 @@ def parse_args():
     parser.add_argument("--prefetch_buffer_size", type=int, default=get_config_value("data_config", "prefetch_buffer_size", data_config_defaults.prefetch_buffer_size), help="Prefetch buffer size for data loading.")
     parser.add_argument("--tokenization_batch_size", type=int, default=get_config_value("data_config", "tokenization_batch_size", data_config_defaults.tokenization_batch_size), help="Batch size for tokenization.")
     parser.add_argument("--use_fast_tokenizer", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("data_config", "use_fast_tokenizer", data_config_defaults.use_fast_tokenizer), help="Whether to use fast tokenizer.")
-    parser.add_argument("--loader", type=str, default=get_config_value("data_config", "loader", data_config_defaults.loader), help="Data loader to use ('grain' or 'tf').")
+    parser.add_argument("--loader", type=str, default=str(get_config_value("data_config", "loader", data_config_defaults.loader)), help="Data loader to use ('grain' or 'tf').")
 
     # Train args
     train_config_defaults = default_config.train_config
@@ -125,6 +126,7 @@ def parse_args():
         data_config=DataConfig(
             dataset_name=args.dataset_name,
             split=args.split,
+            validation_split_name=args.validation_split_name,
             batch_size=args.batch_size,
             tokenizer_name=args.tokenizer_name,
             shuffle_seed=args.shuffle_seed,
