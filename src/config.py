@@ -39,6 +39,7 @@ class TrainConfig:
     checkpoint_dir: str = 'checkpoints'
     debug: bool = False
     run_generation: bool = True
+    log_determinants: bool = False
 
 @dataclass
 class ProjectConfig:

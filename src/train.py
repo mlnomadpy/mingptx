@@ -91,6 +91,7 @@ def parse_args():
     parser.add_argument("--checkpoint_dir", type=str, default=get_config_value("train_config", "checkpoint_dir", train_config_defaults.checkpoint_dir), help="Directory to save checkpoints.")
     parser.add_argument("--debug", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "debug", train_config_defaults.debug), help="Enable or disable debug prints.")
     parser.add_argument("--run_generation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "run_generation", train_config_defaults.run_generation), help="Whether to run text generation.")
+    parser.add_argument("--log_determinants", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_determinants", train_config_defaults.log_determinants), help="Whether to log matrix determinants.")
     
     # Now parse all arguments
     args = parser.parse_args()
@@ -129,7 +130,8 @@ def parse_args():
             use_wandb=args.use_wandb,
             checkpoint_dir=args.checkpoint_dir,
             debug=args.debug,
-            run_generation=args.run_generation
+            run_generation=args.run_generation,
+            log_determinants=args.log_determinants
         )
     )
     return config
@@ -221,8 +223,9 @@ def main():
                 flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
                 log_metrics.update(flat_grad_norms)
 
-                flat_determinants = get_flat_determinants(model, debug=config.train_config.debug)
-                log_metrics.update(flat_determinants)
+                if config.train_config.log_determinants:
+                    flat_determinants = get_flat_determinants(model, debug=config.train_config.debug)
+                    log_metrics.update(flat_determinants)
                 
                 logger.log_metrics(log_metrics, step=step + 1)
                 metrics_manager.reset()

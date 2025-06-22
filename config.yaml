@@ -27,8 +27,9 @@ train_config:
   weight_decay: 0.1
   grad_clip_value: 1.0
   log_interval: 100
-  text_log_interval: 500
-  use_wandb: True
-  checkpoint_dir: "checkpoints"
-  debug: False
-  run_generation: True 
+  text_log_interval: 1000
+  use_wandb: true
+  checkpoint_dir: 'checkpoints'
+  debug: false
+  run_generation: true
+  log_determinants: false 
