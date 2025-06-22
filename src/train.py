@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import flax.nnx as nnx
 import optax
 import orbax.checkpoint as orbax
+import grain.python as grain
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental import mesh_utils
 from transformers import AutoTokenizer
@@ -103,6 +104,7 @@ def parse_args():
     parser.add_argument("--run_generation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "run_generation", train_config_defaults.run_generation), help="Whether to run text generation.")
     parser.add_argument("--log_determinants", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_determinants", train_config_defaults.log_determinants), help="Whether to log matrix determinants.")
     parser.add_argument("--log_gradients", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_gradients", train_config_defaults.log_gradients), help="Whether to log gradient norms.")
+    parser.add_argument("--start_prompt", type=str, default=get_config_value("train_config", "start_prompt", train_config_defaults.start_prompt), help="Start prompt for text generation.")
     
     # Now parse all arguments
     args = parser.parse_args()
@@ -153,7 +155,8 @@ def parse_args():
             debug=args.debug,
             run_generation=args.run_generation,
             log_determinants=args.log_determinants,
-            log_gradients=args.log_gradients
+            log_gradients=args.log_gradients,
+            start_prompt=args.start_prompt,
         )
     )
     return config
@@ -213,7 +216,7 @@ def main():
         return grad_norms
 
     # Initial text generation
-    start_prompt = "The difference between the mind and the cosmos is"
+    start_prompt = config.train_config.start_prompt
     if config.train_config.run_generation:
         generated_text = model.generate_text(
             max_tokens=config.model_config.maxlen, 
@@ -230,8 +233,18 @@ def main():
     for epoch in range(config.train_config.num_epochs):
         start_time = time.time()
 
-        # Get a new iterator for each epoch if the data loader is a tf.data.Dataset
-        data_iterator = text_dl.as_numpy_iterator() if hasattr(text_dl, 'as_numpy_iterator') else text_dl
+        # Get a new iterator for each epoch
+        if hasattr(text_dl, 'as_numpy_iterator'):  # tf.data.Dataset
+            data_iterator = text_dl.as_numpy_iterator()
+        elif hasattr(text_dl, 'to_iter_dataset'):  # grain.Dataset
+            data_iterator = text_dl.to_iter_dataset(
+                grain.ReadOptions(
+                    num_threads=config.data_config.num_threads,
+                    prefetch_buffer_size=config.data_config.prefetch_buffer_size
+                )
+            )
+        else:  # Assumes it's already an iterator
+            data_iterator = text_dl
 
         for batch_data in data_iterator:
 

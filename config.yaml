@@ -43,4 +43,5 @@ train_config:
   debug: false
   run_generation: true
   log_determinants: false
-  log_gradients: false 
+  log_gradients: false
+  start_prompt: "The difference between the mind and the cosmos is" 

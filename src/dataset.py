@@ -219,12 +219,7 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
         .map(transform)
     )
     
-    # Convert to iterable dataset for training
-    iter_dataset = dataset.to_iter_dataset(
-        grain.ReadOptions(num_threads=d_config.num_threads, prefetch_buffer_size=d_config.prefetch_buffer_size)
-    )
-    
-    return iter_dataset
+    return dataset
 
 # Main function for TensorFlow-based loading
 def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
