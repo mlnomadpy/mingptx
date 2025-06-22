@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from config import DataConfig, ModelConfig, TrainConfig
 
-def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str):
+def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
     """
     Loads and prepares a text dataset for training with JAX.
     - Uses streaming for large datasets.
@@ -69,6 +69,17 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
 
     # Batch and prefetch the dataset for performance.
     tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
+    
+    def create_inputs_and_targets(batch):
+        input_ids = batch['input_ids']
+        # Create target by shifting input
+        target_ids = tf.concat([input_ids[:, 1:], tf.constant(pad_token_id, shape=(d_config.batch_size, 1), dtype=tf.int64)], axis=1)
+        # The model expects (maxlen, batch_size), so we transpose.
+        input_batch = tf.transpose(input_ids)
+        target_batch = tf.transpose(target_ids)
+        return input_batch, target_batch
+
+    tf_dataset = tf_dataset.map(create_inputs_and_targets, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     tf_dataset = tf_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     
     return tf_dataset 

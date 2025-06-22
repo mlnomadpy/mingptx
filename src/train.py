@@ -150,7 +150,7 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
 
     # Load data
-    text_dl = load_text_dataset(config.data_config, config.model_config, config.train_config, config.data_config.tokenizer_name)
+    text_dl = load_text_dataset(config.data_config, config.model_config, config.train_config, config.data_config.tokenizer_name, tokenizer.pad_token_id)
 
     # Create model
     rngs = nnx.Rngs(0)
@@ -196,26 +196,13 @@ def main():
 
     # Training loop
     metrics_history = {'train_loss': []}
-    # Correctly vmap over the batch dimension (axis 1) of (maxlen, batch_size) arrays
-    prep_target_batch = jax.vmap(
-        lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
-        in_axes=1, 
-        out_axes=1
-    )
+
     step = 0
 
     for epoch in range(config.train_config.num_epochs):
         start_time = time.time()
-        for batch in text_dl.as_numpy_iterator():
-            # batch is a dict {'input_ids': array} with shape (batch_size, maxlen)
-            # The model expects (maxlen, batch_size), so we transpose.
-            input_batch = jnp.array(batch['input_ids']).T
-            
-            # Create target by shifting input
-            target_batch = prep_target_batch(input_batch)
-            
-            batch_data = (input_batch, target_batch)
-            
+        for batch_data in text_dl.as_numpy_iterator():
+
             if mesh:
                 # Shard the batch dimension (axis 1) across the 'batch' mesh axis
                 batch_data = jax.device_put(batch_data, NamedSharding(mesh, P(None, 'batch')))
