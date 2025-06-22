@@ -1,11 +1,10 @@
-# Optimized configuration for efficient data loading
 model_config:
-  model_name: "mini-gpt"
-  maxlen: 256
+  model_name: "mini-aethergpt"
+  maxlen: 1024
   vocab_size: 50257 # GPT-2 vocab size
-  embed_dim: 32
-  num_heads: 4
-  feed_forward_dim: 32 # 4 * embed_dim
+  embed_dim: 256
+  num_heads: 8
+  feed_forward_dim: 256 # 4 * embed_dim
   num_transformer_blocks: 3
   dropout_rate: 0.1
   dropconnect_rate: 0.1
@@ -14,24 +13,23 @@ model_config:
   power: 1.0
 
 data_config:
-  dataset_name: "mlx-community/fineweb-200k"
+  dataset_name: "Kunj07/openwebtext"
   split: "train"
-  batch_size: 128
+  batch_size: 256
   tokenizer_name: "gpt2"
   # Data loading configuration
   shuffle_seed: 42
   shuffle_buffer_size: 10000
-  cache_size: 10000
-  cache_refresh_rate: 1000  # How many examples to refresh in cache each time
-  cache_refresh_interval: 2  # Refresh cache every N full cache cycles
-  num_threads: 2
+  cache_size: 100000
+  num_threads: 4
   prefetch_buffer_size: 50
   tokenization_batch_size: 1000
   use_fast_tokenizer: true
+  loader: "tf"  # 'grain' or 'tf'
 
 train_config:
   optimizer_name: "adamw"
-  num_epochs: 1
+  num_epochs: 20
   learning_rate: 0.0003
   lr_warmup_steps: 100
   lr_num_decay_steps: 500000

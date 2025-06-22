@@ -79,8 +79,6 @@ def parse_args():
     parser.add_argument("--shuffle_seed", type=int, default=get_config_value("data_config", "shuffle_seed", data_config_defaults.shuffle_seed), help="Seed for dataset shuffling.")
     parser.add_argument("--shuffle_buffer_size", type=int, default=get_config_value("data_config", "shuffle_buffer_size", data_config_defaults.shuffle_buffer_size), help="Buffer size for dataset shuffling.")
     parser.add_argument("--cache_size", type=int, default=get_config_value("data_config", "cache_size", data_config_defaults.cache_size), help="Size of data cache.")
-    parser.add_argument("--cache_refresh_rate", type=int, default=get_config_value("data_config", "cache_refresh_rate", data_config_defaults.cache_refresh_rate), help="Number of cache entries to refresh each time.")
-    parser.add_argument("--cache_refresh_interval", type=int, default=get_config_value("data_config", "cache_refresh_interval", data_config_defaults.cache_refresh_interval), help="Refresh cache every N full cache cycles.")
     parser.add_argument("--num_threads", type=int, default=get_config_value("data_config", "num_threads", data_config_defaults.num_threads), help="Number of threads for data loading.")
     parser.add_argument("--prefetch_buffer_size", type=int, default=get_config_value("data_config", "prefetch_buffer_size", data_config_defaults.prefetch_buffer_size), help="Prefetch buffer size for data loading.")
     parser.add_argument("--tokenization_batch_size", type=int, default=get_config_value("data_config", "tokenization_batch_size", data_config_defaults.tokenization_batch_size), help="Batch size for tokenization.")
@@ -132,8 +130,6 @@ def parse_args():
             shuffle_seed=args.shuffle_seed,
             shuffle_buffer_size=args.shuffle_buffer_size,
             cache_size=args.cache_size,
-            cache_refresh_rate=args.cache_refresh_rate,
-            cache_refresh_interval=args.cache_refresh_interval,
             num_threads=args.num_threads,
             prefetch_buffer_size=args.prefetch_buffer_size,
             tokenization_batch_size=args.tokenization_batch_size,
