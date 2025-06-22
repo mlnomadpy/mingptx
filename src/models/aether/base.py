@@ -6,7 +6,7 @@ from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from config import ModelConfig
 from nmn.nnx.yatattention import MultiHeadAttention
 from nmn.nnx.nmn import YatNMN
-from nmn.nnx.squash.softer_sigmoid import softer_sigmoid
+from nmn.nnx.squashers.softer_sigmoid import softer_sigmoid
 
 def causal_attention_mask(seq_len):
     return jnp.tril(jnp.ones((seq_len, seq_len)))
@@ -14,7 +14,7 @@ def causal_attention_mask(seq_len):
 class TransformerBlock(nnx.Module):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
         self.use_activation = config.use_activation
-        
+
         self.mha = MultiHeadAttention(
             num_heads=config.num_heads,
             in_features=config.embed_dim,
