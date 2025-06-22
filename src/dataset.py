@@ -1,17 +1,15 @@
 import jax
 import jax.numpy as jnp
-import grain.python as pygrain
+import grain.python as grain
 from datasets import load_dataset
 from transformers import AutoTokenizer
 from functools import lru_cache
 import numpy as np
 from typing import Iterator, Dict, Any
-from dataclasses import dataclass
 
 from config import DataConfig, ModelConfig, TrainConfig
 
-@dataclass
-class TextDataSource:
+class TextDataSource(grain.RandomAccessDataSource):
     """Efficient data source for streaming datasets."""
     
     def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int):
@@ -98,31 +96,24 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
         max_length=m_config.maxlen
     )
     
-    # Create sampler with shuffling
-    sampler = pygrain.IndexSampler(
-        num_records=len(data_source),
-        shuffle=True,
-        seed=42,
-        shard_options=pygrain.NoSharding(),
-        num_epochs=t_config.num_epochs
-    )
-    
     # Create input/target transformation
     transform = create_input_target_transform(pad_token_id)
     
-    # Create data loader with transformations (including batching)
-    loader = pygrain.DataLoader(
-        data_source=data_source,
-        sampler=sampler,
-        operations=[
-            pygrain.Batch(batch_size=d_config.batch_size, drop_remainder=True),
-            pygrain.Map(transform)
-        ],
-        worker_count=0,  # Start with 0 for debugging, increase later
-        worker_buffer_size=100,  # Prefetch buffer per worker
+    # Create dataset using Grain's chaining API
+    dataset = (
+        grain.MapDataset.source(data_source)
+        .shuffle(seed=42)
+        .batch(batch_size=d_config.batch_size)
+        .map(transform)
     )
     
-    return loader
+    # Convert to iterable dataset for training
+    # Use fewer threads for initial testing
+    iter_dataset = dataset.to_iter_dataset(
+        grain.ReadOptions(num_threads=2, prefetch_buffer_size=50)
+    )
+    
+    return iter_dataset
 
 # Backward compatibility function for TensorFlow-based loading (if needed)
 def load_text_dataset_tf_fallback(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
