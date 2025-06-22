@@ -58,24 +58,32 @@ class OptimizedTextDataSource(grain.RandomAccessDataSource):
         
         # Process in batches with parallel tokenization
         batch_size = 1000  # Process 1000 texts at once
+        batches = [raw_texts[i:i + batch_size] for i in range(0, len(raw_texts), batch_size)]
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            futures = []
+            # Submit all batches
+            future_to_batch = {
+                executor.submit(self._tokenize_batch, batch): i 
+                for i, batch in enumerate(batches)
+            }
             
-            for i in range(0, len(raw_texts), batch_size):
-                batch_texts = raw_texts[i:i + batch_size]
-                future = executor.submit(self._tokenize_batch, batch_texts)
-                futures.append(future)
+            # Collect results in order to maintain consistency
+            batch_results = [None] * len(batches)
             
-            # Collect results
-            for future in concurrent.futures.as_completed(futures):
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch_idx = future_to_batch[future]
                 try:
                     batch_tokens = future.result()
-                    with self._cache_lock:
-                        for token_seq in batch_tokens:
-                            self._data_cache.append(token_seq)
+                    batch_results[batch_idx] = batch_tokens
                 except Exception as e:
-                    print(f"Error in batch tokenization: {e}")
+                    print(f"Error in batch {batch_idx} tokenization: {e}")
+                    batch_results[batch_idx] = None
+            
+            # Add results to cache in order
+            for batch_tokens in batch_results:
+                if batch_tokens is not None:
+                    for token_seq in batch_tokens:
+                        self._data_cache.append(token_seq)
         
         print(f"Cache populated with {len(self._data_cache)} examples")
     
@@ -196,8 +204,7 @@ def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: Tra
     iter_dataset = dataset.to_iter_dataset(
         grain.ReadOptions(
             num_threads=8,  # Increased from 2 to 8 threads
-            prefetch_buffer_size=100,  # Increased buffer size
-            enable_profiling=False  # Disable profiling for better performance
+            prefetch_buffer_size=100  # Increased buffer size
         )
     )
     
