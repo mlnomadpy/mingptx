@@ -209,7 +209,7 @@ def main():
 
     for epoch in range(config.train_config.num_epochs):
         start_time = time.time()
-        for batch_data in text_dl.as_numpy_iterator():
+        for batch_data in text_dl:
 
             if mesh:
                 # Shard the batch dimension (axis 1) across the 'batch' mesh axis
