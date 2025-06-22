@@ -12,6 +12,8 @@ class ModelConfig:
     dropout_rate: float = 0.1
     dropconnect_rate: float = 0.1
     use_dropconnect: bool = True
+    use_softermax: bool = True
+    power: float = 1.0
 
 @dataclass
 class DataConfig:

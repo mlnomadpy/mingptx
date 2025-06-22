@@ -16,6 +16,8 @@ class TransformerBlock(nnx.Module):
             num_heads=config.num_heads,
             in_features=config.embed_dim,
             use_dropconnect=config.use_dropconnect,
+            use_softermax = config.use_softermax,
+            power = config.power,
             dropconnect_rate=config.dropconnect_rate,
             kernel_init=nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model'))),
             alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
