@@ -4,15 +4,15 @@ from dataclasses import dataclass, field
 class ModelConfig:
     model_name: str = "mini-gpt"
     maxlen: int = 256
-    vocab_size: int = 50257  # GPT-2 vocab size
-    embed_dim: int = 256
-    num_heads: int = 8
-    feed_forward_dim: int = 256
-    num_transformer_blocks: int = 8
+    vocab_size: int = 50304
+    embed_dim: int = 8
+    num_heads: int = 2
+    feed_forward_dim: int = 8
+    num_transformer_blocks: int = 1
     dropout_rate: float = 0.1
     dropconnect_rate: float = 0.1
-    use_dropconnect: bool = True
-    use_softermax: bool = True
+    use_dropconnect: bool = False
+    use_softermax: bool = False
     power: float = 1.0
 
 @dataclass

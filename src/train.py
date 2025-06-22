@@ -66,6 +66,8 @@ def parse_args():
     parser.add_argument("--dropout_rate", type=float, default=get_config_value("model_config", "dropout_rate", model_config_defaults.dropout_rate), help="Dropout rate.")
     parser.add_argument("--dropconnect_rate", type=float, default=get_config_value("model_config", "dropconnect_rate", model_config_defaults.dropconnect_rate), help="Dropconnect rate.")
     parser.add_argument("--use_dropconnect", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_dropconnect", model_config_defaults.use_dropconnect), help="Whether to use dropconnect.")
+    parser.add_argument("--use_softermax", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_softermax", model_config_defaults.use_softermax), help="Whether to use softermax.")
+    parser.add_argument("--power", type=float, default=get_config_value("model_config", "power", model_config_defaults.power), help="Power for softermax.")
 
     # Data args
     data_config_defaults = default_config.data_config
@@ -104,7 +106,9 @@ def parse_args():
             num_transformer_blocks=args.num_transformer_blocks,
             dropout_rate=args.dropout_rate,
             dropconnect_rate=args.dropconnect_rate,
-            use_dropconnect=args.use_dropconnect
+            use_dropconnect=args.use_dropconnect,
+            use_softermax=args.use_softermax,
+            power=args.power
         ),
         data_config=DataConfig(
             dataset_name=args.dataset_name,
