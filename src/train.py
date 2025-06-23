@@ -239,7 +239,7 @@ def main():
         logger.log_text("initial_generated_text", generated_text)
 
     # Training loop
-    metrics_history = {'train_loss': []}
+    metrics_history = {'train_loss': [], 'steps': []}
 
     # Correctly vmap over the batch dimension (axis 1) of (maxlen, batch_size) arrays
     prep_target_batch = jax.vmap(
@@ -302,6 +302,7 @@ def main():
                 computed_metrics = metrics_manager.compute()
                 loss_value = computed_metrics['loss'].item()
                 metrics_history['train_loss'].append(loss_value)
+                metrics_history['steps'].append(step + 1)
                 
                 elapsed_time = time.time() - start_time
                 
