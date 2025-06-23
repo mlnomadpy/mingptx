@@ -45,4 +45,6 @@ train_config:
   run_generation: true
   log_determinants: false
   log_gradients: false
-  start_prompt: "The difference between the mind and the cosmos is" 
+  start_prompt: "The difference between the mind and the cosmos is"
+  log_batch_stats: true
+  log_batch_identity: true

@@ -106,6 +106,7 @@ def parse_args():
     parser.add_argument("--log_determinants", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_determinants", train_config_defaults.log_determinants), help="Whether to log matrix determinants.")
     parser.add_argument("--log_gradients", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_gradients", train_config_defaults.log_gradients), help="Whether to log gradient norms.")
     parser.add_argument("--log_batch_stats", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_batch_stats", train_config_defaults.log_batch_stats), help="Whether to log batch statistics.")
+    parser.add_argument("--log_batch_identity", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_batch_identity", train_config_defaults.log_batch_identity), help="Whether to log a checksum of the batch to verify uniqueness.")
     parser.add_argument("--start_prompt", type=str, default=get_config_value("train_config", "start_prompt", train_config_defaults.start_prompt), help="Start prompt for text generation.")
     
     # Now parse all arguments
@@ -159,6 +160,7 @@ def parse_args():
             log_determinants=args.log_determinants,
             log_gradients=args.log_gradients,
             log_batch_stats=args.log_batch_stats,
+            log_batch_identity=args.log_batch_identity,
             start_prompt=args.start_prompt,
         )
     )
@@ -297,23 +299,24 @@ def main():
                 
                 log_metrics = {'train_loss': loss_value, 'elapsed_time': elapsed_time}
                 
+                # Consolidate all optional metrics into a single dictionary
+                optional_metrics = {}
+                if config.train_config.log_batch_identity:
+                    optional_metrics['batch_identity'] = jnp.sum(input_batch).item()
+
                 if config.train_config.log_batch_stats:
-                    batch_mean = jnp.mean(input_batch).item()
-                    batch_std = jnp.std(input_batch).item()
-                    batch_unique_tokens = len(jnp.unique(input_batch))
-                    log_metrics.update({
-                        'batch_mean': batch_mean,
-                        'batch_std': batch_std,
-                        'batch_unique_tokens': batch_unique_tokens
-                    })
+                    optional_metrics['batch_mean'] = jnp.mean(input_batch).item()
+                    optional_metrics['batch_std'] = jnp.std(input_batch).item()
+                    optional_metrics['batch_unique_tokens'] = len(jnp.unique(input_batch))
 
                 if config.train_config.log_gradients and grad_norms is not None:
-                    flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
-                    log_metrics.update(flat_grad_norms)
+                    optional_metrics.update(flatten_for_logging(grad_norms, prefix='grads'))
 
                 if config.train_config.log_determinants:
-                    flat_determinants = get_flat_determinants(model, debug=config.train_config.debug)
-                    log_metrics.update(flat_determinants)
+                    optional_metrics.update(get_flat_determinants(model, debug=config.train_config.debug))
+                
+                # Update the main metrics dictionary
+                log_metrics.update(optional_metrics)
                 
                 logger.log_metrics(log_metrics, step=step + 1)
                 metrics_manager.reset()
