@@ -142,7 +142,7 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
     # Create dataset using Grain's chaining API
     dataset = (
         grain.MapDataset.source(data_source)
-        .shuffle(seed=d_config.shuffle_seed)
+        # .shuffle(seed=d_config.shuffle_seed)  # NOTE: This shuffles a small buffer and is incorrect. The source is shuffled, but the buffer logic is flawed.
         .batch(batch_size=d_config.batch_size)
         .map(transform)
     )
