@@ -52,6 +52,7 @@ class TrainConfig:
     run_generation: bool = True
     log_determinants: bool = False
     log_gradients: bool = False
+    log_batch_stats: bool = False
     start_prompt: str = "The difference between the mind and the cosmos is"
 
 @dataclass

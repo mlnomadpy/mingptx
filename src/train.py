@@ -105,6 +105,7 @@ def parse_args():
     parser.add_argument("--run_generation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "run_generation", train_config_defaults.run_generation), help="Whether to run text generation.")
     parser.add_argument("--log_determinants", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_determinants", train_config_defaults.log_determinants), help="Whether to log matrix determinants.")
     parser.add_argument("--log_gradients", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_gradients", train_config_defaults.log_gradients), help="Whether to log gradient norms.")
+    parser.add_argument("--log_batch_stats", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_batch_stats", train_config_defaults.log_batch_stats), help="Whether to log batch statistics.")
     parser.add_argument("--start_prompt", type=str, default=get_config_value("train_config", "start_prompt", train_config_defaults.start_prompt), help="Start prompt for text generation.")
     
     # Now parse all arguments
@@ -157,6 +158,7 @@ def parse_args():
             run_generation=args.run_generation,
             log_determinants=args.log_determinants,
             log_gradients=args.log_gradients,
+            log_batch_stats=args.log_batch_stats,
             start_prompt=args.start_prompt,
         )
     )
@@ -237,6 +239,7 @@ def main():
     )
 
     step = 0
+    printed_batch_example = False
 
     for epoch in range(config.train_config.num_epochs):
         start_time = time.time()
@@ -263,6 +266,20 @@ def main():
             # Create target by shifting input using the vmapped function
             target_batch = prep_target_batch(input_batch)
             
+            if config.train_config.debug and not printed_batch_example:
+                print("\n--- Batch Example ---")
+                # Print the first sequence in the batch
+                print("Input Batch Example (first sequence):", input_batch[:, 0])
+                print("Target Batch Example (first sequence):", target_batch[:, 0])
+                
+                # Decode to see the text for more clarity
+                # The .T is to get a single sequence for decoding
+                print("\nDecoded Input:", tokenizer.decode(input_batch[:, 0]))
+                print("Decoded Target:", tokenizer.decode(target_batch[:, 0]))
+
+                print("--- End Batch Example ---\n")
+                printed_batch_example = True
+
             batch_data = (input_batch, target_batch)
 
             if mesh:
@@ -280,6 +297,16 @@ def main():
                 
                 log_metrics = {'train_loss': loss_value, 'elapsed_time': elapsed_time}
                 
+                if config.train_config.log_batch_stats:
+                    batch_mean = jnp.mean(input_batch).item()
+                    batch_std = jnp.std(input_batch).item()
+                    batch_unique_tokens = len(jnp.unique(input_batch))
+                    log_metrics.update({
+                        'batch_mean': batch_mean,
+                        'batch_std': batch_std,
+                        'batch_unique_tokens': batch_unique_tokens
+                    })
+
                 if config.train_config.log_gradients and grad_norms is not None:
                     flat_grad_norms = flatten_for_logging(grad_norms, prefix='grads')
                     log_metrics.update(flat_grad_norms)
