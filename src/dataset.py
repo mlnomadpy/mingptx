@@ -86,24 +86,11 @@ class StreamingTextDataSource(grain.RandomAccessDataSource):
         return tokens['input_ids'].squeeze(0).astype(np.int32)
 
 def create_input_target_transform(pad_token_id: int):
-    """Transform that creates input/target pairs efficiently."""
+    """Transform that just returns the input ids, target is created in train."""
     
     def transform(batch):
         # batch is now a numpy array of shape (batch_size, seq_len)
-        input_ids = np.array(batch)
-        
-        # Create targets by shifting input (vectorized operation)
-        targets = np.concatenate([
-            input_ids[:, 1:], 
-            np.full((input_ids.shape[0], 1), pad_token_id, dtype=np.int32)
-        ], axis=1)
-        
-        # Convert to JAX arrays and transpose for model expectations
-        # Model expects (seq_len, batch_size)
-        input_batch = jnp.array(input_ids).T
-        target_batch = jnp.array(targets).T
-        
-        return input_batch, target_batch
+        return np.array(batch)
     
     return transform
 
@@ -207,19 +194,10 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
     
     tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
 
-    def create_inputs_and_targets(batch):
-        input_ids = batch['input_ids']
-        # Create target by shifting input
-        target_ids = tf.concat([input_ids[:, 1:], tf.fill((d_config.batch_size, 1), pad_token_id)], axis=1)
-        # The model expects (maxlen, batch_size), so we transpose.
-        input_batch = tf.transpose(input_ids)
-        target_batch = tf.transpose(target_ids)
-        return input_batch, target_batch
+    def just_input_ids(batch):
+        return batch['input_ids']
 
-    tf_dataset = tf_dataset.map(
-        create_inputs_and_targets, 
-        num_parallel_calls=tf.data.experimental.AUTOTUNE
-    )
+    tf_dataset = tf_dataset.map(just_input_ids, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     tf_dataset = tf_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     
     return tf_dataset 

@@ -11,6 +11,7 @@ from jax.experimental import mesh_utils
 from transformers import AutoTokenizer
 import argparse
 import yaml
+import numpy as np
 
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
@@ -228,6 +229,13 @@ def main():
     # Training loop
     metrics_history = {'train_loss': []}
 
+    # Correctly vmap over the batch dimension (axis 1) of (maxlen, batch_size) arrays
+    prep_target_batch = jax.vmap(
+        lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
+        in_axes=1, 
+        out_axes=1
+    )
+
     step = 0
 
     for epoch in range(config.train_config.num_epochs):
@@ -247,6 +255,15 @@ def main():
             data_iterator = text_dl
 
         for batch_data in data_iterator:
+            # The data loader returns (batch_size, maxlen) as a numpy array.
+            # The model expects (maxlen, batch_size), so we transpose.
+            # We convert to jnp.array to use jax.vmap.
+            input_batch = jnp.array(batch_data).T
+            
+            # Create target by shifting input using the vmapped function
+            target_batch = prep_target_batch(input_batch)
+            
+            batch_data = (input_batch, target_batch)
 
             if mesh:
                 # Shard the batch dimension (axis 1) across the 'batch' mesh axis
