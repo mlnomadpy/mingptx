@@ -48,7 +48,7 @@ class Logger:
             wandb.finish()
 
 def visualize_and_log_loss(metrics_history, logger, step):
-    plt.plot(metrics_history['train_loss'])
+    plt.plot(metrics_history['steps'], metrics_history['train_loss'])
     plt.title('Training Loss')
     plt.xlabel('Step')
     plt.ylabel('Loss')
@@ -56,8 +56,8 @@ def visualize_and_log_loss(metrics_history, logger, step):
     loss_plot_path = 'training_loss.png'
     plt.savefig(loss_plot_path)
     plt.close() # prevent displaying the plot locally
-    
-    logger.log_image("training_loss_plot", loss_plot_path, step=step)
+
+    # logger.log_image("training_loss_plot", loss_plot_path, step=step)
 
 def flatten_for_logging(pytree, prefix='grads'):
     """Flattens a PyTree and formats the keys for wandb logging."""

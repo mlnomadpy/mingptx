@@ -203,7 +203,15 @@ def main():
     # Loss function
     def loss_fn(mdl, batch):
         logits = mdl(batch[0], training=True)
-        loss = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=batch[1]).mean()
+        labels = batch[1]
+        
+        # Calculate loss per token, then create a mask to ignore padding
+        token_losses = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels)
+        mask = labels != tokenizer.pad_token_id
+        
+        # Calculate the mean loss only over non-padded tokens
+        loss = jnp.sum(token_losses * mask) / jnp.sum(mask)
+        
         return loss, logits
 
     # Training step
