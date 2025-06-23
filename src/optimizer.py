@@ -17,9 +17,9 @@ def create_optimizer(model, config):
     )
 
     # Chain the optimizer with gradient clipping
-    optimizer_chain = [
-        optax.clip_by_global_norm(config.train_config.grad_clip_value),
-    ]
+    optimizer_chain = []
+    if hasattr(config.train_config, 'grad_clip_value') and config.train_config.grad_clip_value and config.train_config.grad_clip_value > 0:
+        optimizer_chain.append(optax.clip_by_global_norm(config.train_config.grad_clip_value))
 
     if config.train_config.optimizer_name == 'adam':
         optimizer_chain.append(optax.adam(
