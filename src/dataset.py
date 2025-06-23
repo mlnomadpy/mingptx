@@ -10,111 +10,6 @@ import threading
 
 from config import DataConfig, ModelConfig, TrainConfig
 
-class TextDataSource(grain.RandomAccessDataSource):
-    """Efficient data source for streaming datasets with dynamic cache updates."""
-    
-    def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int, d_config: DataConfig):
-        self.dataset_name = dataset_name
-        self.split = split
-        self.max_length = max_length
-        self.d_config = d_config
-        
-        # Load tokenizer once
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=d_config.use_fast_tokenizer)
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-        
-        # Load dataset in streaming mode
-        self.dataset = load_dataset(dataset_name, split=split, streaming=True)
-        self.dataset = self.dataset.shuffle(seed=d_config.shuffle_seed, buffer_size=d_config.shuffle_buffer_size)
-        
-        # Create an iterator for the dataset
-        self.dataset_iter = iter(self.dataset)
-        
-        # Dynamic cache configuration
-        self._cache_size = d_config.cache_size
-        self._data_cache = []
-        self._total_accessed = 0
-        self._cache_generation = 0
-        self._lock = threading.Lock()
-        
-        # Populate initial cache
-        self._populate_cache()
-    
-    def _populate_cache(self):
-        """Populate cache with tokenized data."""
-        print(f"Populating cache (generation {self._cache_generation}) with {self._cache_size} examples...")
-        self._data_cache.clear()
-        
-        examples_added = 0
-        try:
-            for example in self.dataset_iter:
-                if examples_added >= self._cache_size:
-                    break
-                
-                # Tokenize directly to numpy arrays
-                tokens = self.tokenizer(
-                    example["text"],
-                    truncation=True,
-                    padding="max_length",
-                    max_length=self.max_length,
-                    return_tensors="np"
-                )
-                
-                # Store just the input_ids as a flat array
-                self._data_cache.append(tokens['input_ids'].squeeze(0).astype(np.int32))
-                examples_added += 1
-                
-        except StopIteration:
-            # If we run out of data, recreate the iterator
-            print("Reached end of dataset, reshuffling and recreating iterator...")
-            # Reshuffle with a new seed to ensure different data ordering in next pass
-            self.dataset = self.dataset.shuffle(seed=self.d_config.shuffle_seed + self._cache_generation, buffer_size=self.d_config.shuffle_buffer_size)
-            self.dataset_iter = iter(self.dataset)
-            # Try to fill the remaining cache
-            for example in self.dataset_iter:
-                if examples_added >= self._cache_size:
-                    break
-                
-                tokens = self.tokenizer(
-                    example["text"],
-                    truncation=True,
-                    padding="max_length",
-                    max_length=self.max_length,
-                    return_tensors="np"
-                )
-                
-                self._data_cache.append(tokens['input_ids'].squeeze(0).astype(np.int32))
-                examples_added += 1
-        
-        print(f"Cache populated with {len(self._data_cache)} examples")
-        self._cache_generation += 1
-    
-    def __len__(self):
-        return len(self._data_cache)
-    
-    def __getitem__(self, index):
-        with self._lock:
-            self._total_accessed += 1
-            
-            # Periodically refresh the entire cache to see new data
-            if self._total_accessed > 0 and self._total_accessed % self._cache_size == 0:
-                self._populate_cache()
-            
-            # Ensure cache is not empty before accessing
-            if not self._data_cache:
-                raise IndexError("Data cache is empty. Possible exhaustion of the dataset.")
-            
-            return self._data_cache[index % len(self._data_cache)]
-
-    def get_cache_stats(self):
-        """Get statistics about the cache for debugging."""
-        return {
-            'cache_size': len(self._data_cache),
-            'total_accessed': self._total_accessed,
-            'cache_generation': self._cache_generation,
-        }
-
 # This is a streaming data source for Grain
 class StreamingTextDataSource(grain.RandomAccessDataSource):
     """A streaming data source for Grain that tokenizes on the fly."""
@@ -232,24 +127,14 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
     """
     
     # Create data source based on whether caching is enabled
-    if d_config.use_cache:
-        print("Using caching Grain data source.")
-        data_source = TextDataSource(
-            dataset_name=d_config.dataset_name,
-            split=d_config.split,
-            tokenizer_name=tokenizer_name,
-            max_length=m_config.maxlen,
-            d_config=d_config
-        )
-    else:
-        print("Using streaming Grain data source.")
-        data_source = StreamingTextDataSource(
-            dataset_name=d_config.dataset_name,
-            split=d_config.split,
-            tokenizer_name=tokenizer_name,
-            max_length=m_config.maxlen,
-            d_config=d_config
-        )
+    print("Using streaming Grain data source.")
+    data_source = StreamingTextDataSource(
+        dataset_name=d_config.dataset_name,
+        split=d_config.split,
+        tokenizer_name=tokenizer_name,
+        max_length=m_config.maxlen,
+        d_config=d_config
+    )
 
     # Create input/target transformation
     transform = create_input_target_transform(pad_token_id)
@@ -315,11 +200,6 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
         data_generator,
         output_signature=output_signature
     )
-
-    # Enable caching if specified in config
-    if d_config.use_cache:
-        print("Enabling tf.data caching.")
-        tf_dataset = tf_dataset.cache()
 
     # Shuffle, batch, and create targets
     if d_config.shuffle_buffer_size and d_config.shuffle_buffer_size > 0:
