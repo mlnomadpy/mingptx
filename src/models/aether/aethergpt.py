@@ -6,7 +6,7 @@ from model import register_model
 from models.aether.base import TransformerBlock
 from models.gpt import GPT, TokenAndPositionEmbedding
 from nmn.nnx.nmn import YatNMN
-from nmn.nnx.squashers import softermax
+from nmn.nnx.squashers.softermax import softermax
 import jax.numpy as jnp
 import jax
 
