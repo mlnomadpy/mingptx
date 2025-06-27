@@ -6,7 +6,7 @@ def softermax_cross_entropy_with_integer_labels(
     logits: chex.Array,
     labels: chex.Array,
     n: float = 1.0,
-    epsilon: float = 1e-6,
+    epsilon: float = 1e-9,
     axis: int = -1
 ) -> chex.Array:
     """
@@ -29,12 +29,20 @@ def softermax_cross_entropy_with_integer_labels(
 
     # Bring class axis to the last dimension for easier indexing
     logits = jnp.moveaxis(logits, axis, -1)
-    logits_pow = jnp.power(logits + 1e-12, n)
+
+    # Add epsilon before power to ensure stability for zero logits.
+    logits_plus_epsilon = logits + epsilon
+    logits_pow = jnp.power(logits_plus_epsilon, n)
     logits_sum = jnp.sum(logits_pow, axis=-1)
 
     # Gather correct class logits
     gather_indices = jnp.expand_dims(labels, axis=-1)
-    correct_logits = jnp.take_along_axis(logits, gather_indices, axis=-1).squeeze(axis=-1)
+    correct_logits_plus_epsilon = jnp.take_along_axis(logits_plus_epsilon, gather_indices, axis=-1).squeeze(axis=-1)
+    
+    # The epsilon is already incorporated in logits_sum via logits_pow
+    log_normalizers = jnp.log(logits_sum)
+    # log(x^n) = n*log(x)
+    log_correct_logits = n * jnp.log(correct_logits_plus_epsilon)
 
-    loss = -n * jnp.log(correct_logits + 1e-12) + jnp.log(logits_sum + epsilon)
+    loss = log_normalizers - log_correct_logits
     return loss
