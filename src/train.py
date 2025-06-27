@@ -387,6 +387,9 @@ def main():
     checkpoint_path = os.path.join(save_dir, 'model_checkpoint')
     checkpointer.save(checkpoint_path, state)
     print(f"Checkpoint saved to {checkpoint_path}")
+    
+    # Save model to wandb
+    logger.save_model(checkpoint_path, name=f"mingptx-{config.model_config.model_name}", aliases=["latest", "final"])
 
     # Load the model from the checkpoint to verify it
     print("\nVerifying checkpoint by loading and generating text...")

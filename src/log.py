@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import jax.tree_util as jtu
 import jax.numpy as jnp
 import flax.nnx as nnx
+import os
 
 class Logger:
     def __init__(self, project_name, config, use_wandb=True):
@@ -42,6 +43,25 @@ class Logger:
                 wandb.log(log_data, step=step)
             else:
                 wandb.log(log_data)
+
+    def save_model(self, checkpoint_path, name="model", aliases=None):
+        """Save model checkpoint as wandb artifact"""
+        if self.use_wandb:
+            if aliases is None:
+                aliases = ["latest"]
+            
+            # Create artifact
+            artifact = wandb.Artifact(name=name, type="model")
+            
+            # Add the checkpoint directory to the artifact
+            if os.path.isdir(checkpoint_path):
+                artifact.add_dir(checkpoint_path)
+            else:
+                artifact.add_file(checkpoint_path)
+            
+            # Log the artifact
+            wandb.log_artifact(artifact, aliases=aliases)
+            print(f"Model saved to wandb as artifact '{name}' with aliases {aliases}")
 
     def finish(self):
         if self.use_wandb:
