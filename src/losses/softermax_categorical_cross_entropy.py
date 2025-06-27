@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import chex
 from typing import Union
@@ -26,6 +27,9 @@ def softermax_cross_entropy_with_integer_labels(
     chex.assert_type([labels], int)
     logits = jnp.asarray(logits)
     labels = jnp.asarray(labels)
+
+    # Ensure logits are non-negative.
+    logits = jax.nn.relu(logits)
 
     # Bring class axis to the last dimension for easier indexing
     logits = jnp.moveaxis(logits, axis, -1)
@@ -70,6 +74,9 @@ def softermax_cross_entropy_with_one_hot_labels(
     chex.assert_type([logits, labels], float)
     logits = jnp.asarray(logits)
     labels = jnp.asarray(labels)
+
+    # Ensure logits are non-negative.
+    logits = jax.nn.relu(logits)
 
     # Bring class axis to the last dimension for easier indexing
     logits = jnp.moveaxis(logits, axis, -1)
