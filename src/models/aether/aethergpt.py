@@ -44,42 +44,6 @@ class MiniGPT(GPT):
         for transformer_block in self.transformer_blocks:
             x = transformer_block(x, training=training)
         return self.output_layer(x)
-    
-    def generate_text(self, max_tokens: int, start_prompt: str, tokenizer, top_k=10):
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        
-        start_tokens = tokenizer.encode(start_prompt, return_tensors="jax")[0].tolist()
-        
-        def sample_from(logits):
-            logits, indices = jax.lax.top_k(logits, k=top_k)
-            logits = softermax(logits)
-            return jax.random.choice(jax.random.PRNGKey(0), indices, p=logits)
-
-        def generate_step(tokens):
-            pad_len = self.config.maxlen - len(tokens)
-            sample_index = len(tokens) - 1
-            if pad_len < 0:
-                x = jnp.array(tokens[:self.config.maxlen])
-                sample_index = self.config.maxlen - 1
-            elif pad_len > 0:
-                x = jnp.array(tokens + [tokenizer.pad_token_id] * pad_len)
-            else:
-                x = jnp.array(tokens)
-
-            x = x[None, :]
-            logits = self(x, training=False)
-            next_token = sample_from(logits[0][sample_index])
-            return next_token
-
-        generated_tokens = []
-        for _ in range(max_tokens):
-            next_token = generate_step(start_tokens + generated_tokens)
-            if next_token == tokenizer.eos_token_id:
-                break
-            generated_tokens.append(int(next_token))
-        
-        return tokenizer.decode(start_tokens + generated_tokens) 
 
 
 @register_model("mini-CygnusGPT")
@@ -174,42 +138,6 @@ class MiniCygnusGPT(GPT):
                 x = self.downsample_layers[i](x)
         return self.output_layer(x)
     
-    def generate_text(self, max_tokens: int, start_prompt: str, tokenizer, top_k=10):
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        
-        start_tokens = tokenizer.encode(start_prompt, return_tensors="jax")[0].tolist()
-        
-        def sample_from(logits):
-            logits, indices = jax.lax.top_k(logits, k=top_k)
-            logits = softermax(logits)
-            return jax.random.choice(jax.random.PRNGKey(0), indices, p=logits)
-
-        def generate_step(tokens):
-            pad_len = self.config.maxlen - len(tokens)
-            sample_index = len(tokens) - 1
-            if pad_len < 0:
-                x = jnp.array(tokens[:self.config.maxlen])
-                sample_index = self.config.maxlen - 1
-            elif pad_len > 0:
-                x = jnp.array(tokens + [tokenizer.pad_token_id] * pad_len)
-            else:
-                x = jnp.array(tokens)
-
-            x = x[None, :]
-            logits = self(x, training=False)
-            next_token = sample_from(logits[0][sample_index])
-            return next_token
-
-        generated_tokens = []
-        for _ in range(max_tokens):
-            next_token = generate_step(start_tokens + generated_tokens)
-            if next_token == tokenizer.eos_token_id:
-                break
-            generated_tokens.append(int(next_token))
-        
-        return tokenizer.decode(start_tokens + generated_tokens) 
-    
 @register_model("micro-aethergpt")
 class MicroGPT(GPT):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
@@ -242,39 +170,3 @@ class MicroGPT(GPT):
         x = self.transformer_block(x, training=training)
         return self.output_layer(x) 
     
-  
-    def generate_text(self, max_tokens: int, start_prompt: str, tokenizer, top_k=10):
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        
-        start_tokens = tokenizer.encode(start_prompt, return_tensors="jax")[0].tolist()
-        
-        def sample_from(logits):
-            logits, indices = jax.lax.top_k(logits, k=top_k)
-            logits = softermax(logits)
-            return jax.random.choice(jax.random.PRNGKey(0), indices, p=logits)
-
-        def generate_step(tokens):
-            pad_len = self.config.maxlen - len(tokens)
-            sample_index = len(tokens) - 1
-            if pad_len < 0:
-                x = jnp.array(tokens[:self.config.maxlen])
-                sample_index = self.config.maxlen - 1
-            elif pad_len > 0:
-                x = jnp.array(tokens + [tokenizer.pad_token_id] * pad_len)
-            else:
-                x = jnp.array(tokens)
-
-            x = x[None, :]
-            logits = self(x, training=False)
-            next_token = sample_from(logits[0][sample_index])
-            return next_token
-
-        generated_tokens = []
-        for _ in range(max_tokens):
-            next_token = generate_step(start_tokens + generated_tokens)
-            if next_token == tokenizer.eos_token_id:
-                break
-            generated_tokens.append(int(next_token))
-        
-        return tokenizer.decode(start_tokens + generated_tokens) 
