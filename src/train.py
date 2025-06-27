@@ -217,9 +217,13 @@ def main():
             # Use our custom softermax implementation
             # Use the power from model config if using softermax in attention, otherwise default to 1.0
             power = config.model_config.power if config.model_config.use_softermax else 1.0
+            
+            # One-hot encode the labels
+            one_hot_labels = jax.nn.one_hot(labels, num_classes=config.model_config.vocab_size)
+            
             token_losses = softermax_cross_entropy_with_one_hot_labels(
                 logits=logits, 
-                labels=labels, 
+                labels=one_hot_labels, 
                 n=power
             )
         else:
