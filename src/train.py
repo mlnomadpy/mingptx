@@ -18,7 +18,7 @@ from dataset import load_text_dataset
 from model import create_model
 from optimizer import create_optimizer
 from log import Logger, visualize_and_log_loss, flatten_for_logging, get_flat_determinants
-from losses.softermax_categorical_cross_entropy import softermax_cross_entropy_with_integer_labels
+from losses.softermax_categorical_cross_entropy import softermax_cross_entropy_with_one_hot_labels
 
 def setup_mesh():
     devices = jax.devices()
@@ -217,7 +217,7 @@ def main():
             # Use our custom softermax implementation
             # Use the power from model config if using softermax in attention, otherwise default to 1.0
             power = config.model_config.power if config.model_config.use_softermax else 1.0
-            token_losses = softermax_cross_entropy_with_integer_labels(
+            token_losses = softermax_cross_entropy_with_one_hot_labels(
                 logits=logits, 
                 labels=labels, 
                 n=power
