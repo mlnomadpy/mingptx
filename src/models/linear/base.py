@@ -10,41 +10,59 @@ def causal_attention_mask(seq_len):
 
 class TransformerBlock(nnx.Module):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
+        # Handle partitioning based on whether mesh is available
+        if mesh is not None:
+            mha_kernel_init = nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model')))
+            mha_bias_init = nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model')))
+            layer_norm_scale_init = nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P('model')))
+            layer_norm1_bias_init = nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model')))
+            linear_kernel_init = nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model')))
+            linear_bias_init = nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model')))
+            layer_norm2_bias_init = nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P(None, 'model')))
+        else:
+            mha_kernel_init = nnx.initializers.xavier_uniform()
+            mha_bias_init = nnx.initializers.zeros_init()
+            layer_norm_scale_init = nnx.initializers.ones_init()
+            layer_norm1_bias_init = nnx.initializers.zeros_init()
+            linear_kernel_init = nnx.initializers.xavier_uniform()
+            linear_bias_init = nnx.initializers.zeros_init()
+            layer_norm2_bias_init = nnx.initializers.zeros_init()
+
         self.mha = nnx.MultiHeadAttention(
             num_heads=config.num_heads,
             in_features=config.embed_dim,
-            kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
-            bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
+            kernel_init=mha_kernel_init,
+            bias_init=mha_bias_init,
             rngs=rngs
         )
         self.dropout1 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
         self.layer_norm1 = nnx.LayerNorm(
             epsilon=1e-6,
             num_features=config.embed_dim,
-            scale_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P('model'))),
-            bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
+            scale_init=layer_norm_scale_init,
+            bias_init=layer_norm1_bias_init,
             rngs=rngs
         )
         self.linear1 = nnx.Linear(
             in_features=config.embed_dim,
             out_features=config.feed_forward_dim,
-            kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
-            bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
+            kernel_init=linear_kernel_init,
+            bias_init=linear_bias_init,
             rngs=rngs
         )
         self.linear2 = nnx.Linear(
             in_features=config.feed_forward_dim,
             out_features=config.embed_dim,
-            kernel_init=nnx.with_partitioning(nnx.initializers.xavier_uniform(), NamedSharding(mesh, P(None, 'model'))),
-            bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
+            kernel_init=linear_kernel_init,
+            bias_init=linear_bias_init,
             rngs=rngs
         )
         self.dropout2 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
         self.layer_norm2 = nnx.LayerNorm(
             epsilon=1e-6,
             num_features=config.embed_dim,
-            scale_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P('model'))),
-            bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P(None, 'model'))),
+            scale_init=layer_norm_scale_init,
+            bias_init=layer_norm2_bias_init,
             rngs=rngs
         )
 

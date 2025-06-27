@@ -15,6 +15,16 @@ class TransformerBlock(nnx.Module):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
         self.use_activation = config.use_activation
 
+        # Handle partitioning based on whether mesh is available
+        if mesh is not None:
+            kernel_init = nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model')))
+            alpha_init = nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model')))
+            bias_init = nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model')))
+        else:
+            kernel_init = nnx.initializers.orthogonal()
+            alpha_init = nnx.initializers.ones_init()
+            bias_init = nnx.initializers.zeros_init()
+
         self.mha = MultiHeadAttention(
             num_heads=config.num_heads,
             in_features=config.embed_dim,
@@ -22,9 +32,9 @@ class TransformerBlock(nnx.Module):
             use_softermax = config.use_softermax,
             power = config.power,
             dropconnect_rate=config.dropconnect_rate,
-            kernel_init=nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model'))),
-            alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
-            bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
+            kernel_init=kernel_init,
+            alpha_init=alpha_init,
+            bias_init=bias_init,
             rngs=rngs
         )
         self.dropout1 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
@@ -35,9 +45,9 @@ class TransformerBlock(nnx.Module):
             out_features=config.embed_dim,
             use_dropconnect=config.use_dropconnect,
             drop_rate=config.dropconnect_rate,
-            kernel_init=nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model'))),
-            alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
-            bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
+            kernel_init=kernel_init,
+            alpha_init=alpha_init,
+            bias_init=bias_init,
             rngs=rngs
         )
         # self.non_linear2 = YatNMN(
