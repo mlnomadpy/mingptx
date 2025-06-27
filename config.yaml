@@ -48,3 +48,4 @@ train_config:
   start_prompt: "The difference between the mind and the cosmos is"
   log_batch_stats: true
   log_batch_identity: true
+  loss_function: "optax"  # 'optax' or 'softermax'

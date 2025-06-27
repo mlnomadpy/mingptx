@@ -18,6 +18,7 @@ from dataset import load_text_dataset
 from model import create_model
 from optimizer import create_optimizer
 from log import Logger, visualize_and_log_loss, flatten_for_logging, get_flat_determinants
+from losses.softermax_categorical_cross_entropy import softermax_cross_entropy_with_integer_labels
 
 def setup_mesh():
     devices = jax.devices()
@@ -108,6 +109,7 @@ def parse_args():
     parser.add_argument("--log_batch_stats", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_batch_stats", train_config_defaults.log_batch_stats), help="Whether to log batch statistics.")
     parser.add_argument("--log_batch_identity", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "log_batch_identity", train_config_defaults.log_batch_identity), help="Whether to log a checksum of the batch to verify uniqueness.")
     parser.add_argument("--start_prompt", type=str, default=get_config_value("train_config", "start_prompt", train_config_defaults.start_prompt), help="Start prompt for text generation.")
+    parser.add_argument("--loss_function", type=str, default=get_config_value("train_config", "loss_function", train_config_defaults.loss_function), help="Loss function to use ('optax' or 'softermax').")
     
     # Now parse all arguments
     args = parser.parse_args()
@@ -162,6 +164,7 @@ def parse_args():
             log_batch_stats=args.log_batch_stats,
             log_batch_identity=args.log_batch_identity,
             start_prompt=args.start_prompt,
+            loss_function=args.loss_function,
         )
     )
     return config
@@ -192,6 +195,10 @@ def main():
     params = nnx.state(model, nnx.Param)
     num_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
     print(f"Number of model parameters: {num_params / 1e6:.2f}M")
+    print(f"Using loss function: {config.train_config.loss_function}")
+    if config.train_config.loss_function == "softermax":
+        power = config.model_config.power if config.model_config.use_softermax else 1.0
+        print(f"Softermax power parameter: {power}")
     logger.log_metrics({'num_params': num_params}, step=0)
 
     # Optimizer
@@ -205,8 +212,21 @@ def main():
         logits = mdl(batch[0], training=True)
         labels = batch[1]
         
-        # Calculate loss per token, then create a mask to ignore padding
-        token_losses = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels)
+        # Calculate loss per token based on the configured loss function
+        if config.train_config.loss_function == "softermax":
+            # Use our custom softermax implementation
+            # Use the power from model config if using softermax in attention, otherwise default to 1.0
+            power = config.model_config.power if config.model_config.use_softermax else 1.0
+            token_losses = softermax_cross_entropy_with_integer_labels(
+                logits=logits, 
+                labels=labels, 
+                n=power
+            )
+        else:
+            # Use optax standard softmax cross entropy
+            token_losses = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels)
+        
+        # Create a mask to ignore padding tokens
         mask = labels != tokenizer.pad_token_id
         
         # Calculate the mean loss only over non-padded tokens

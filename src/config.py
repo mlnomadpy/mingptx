@@ -55,6 +55,7 @@ class TrainConfig:
     log_batch_stats: bool = False
     log_batch_identity: bool = False
     start_prompt: str = "The difference between the mind and the cosmos is"
+    loss_function: str = "optax"  # 'optax' or 'softermax'
 
 @dataclass
 class ProjectConfig:
