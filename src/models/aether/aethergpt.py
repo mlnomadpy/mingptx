@@ -35,6 +35,7 @@ class MiniGPT(GPT):
             kernel_init=kernel_init,
             alpha_init=alpha_init,
             bias_init=bias_init,
+            use_bias=False,
             rngs=rngs
         )
 
@@ -103,6 +104,7 @@ class MicroGPT(GPT):
             kernel_init=kernel_init,
             alpha_init=alpha_init,
             bias_init=bias_init,
+            use_bias=False,
             rngs=rngs
         )
 

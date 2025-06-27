@@ -18,7 +18,7 @@ from dataset import load_text_dataset
 from model import create_model
 from optimizer import create_optimizer
 from log import Logger, visualize_and_log_loss, flatten_for_logging, get_flat_determinants
-from losses.softermax_categorical_cross_entropy import softermax_cross_entropy_with_one_hot_labels
+from losses.softermax_categorical_cross_entropy import softermax_cross_entropy_with_one_hot_labels, softermax_cross_entropy_with_integer_labels
 
 def setup_mesh():
     devices = jax.devices()
@@ -219,11 +219,11 @@ def main():
             power = config.model_config.power if config.model_config.use_softermax else 1.0
             
             # One-hot encode the labels
-            one_hot_labels = jax.nn.one_hot(labels, num_classes=config.model_config.vocab_size)
+            # one_hot_labels = jax.nn.one_hot(labels, num_classes=config.model_config.vocab_size)
             
-            token_losses = softermax_cross_entropy_with_one_hot_labels(
+            token_losses = softermax_cross_entropy_with_integer_labels(
                 logits=logits, 
-                labels=one_hot_labels, 
+                labels=labels, 
                 n=power
             )
         else:
