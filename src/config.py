@@ -15,6 +15,7 @@ class ModelConfig:
     use_softermax: bool = False
     power: float = 1.0
     use_activation: bool = False
+    use_yatnmn: bool = False
 
 @dataclass
 class DataConfig:

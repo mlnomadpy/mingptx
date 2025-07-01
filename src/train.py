@@ -71,6 +71,8 @@ def parse_args():
     parser.add_argument("--use_dropconnect", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_dropconnect", model_config_defaults.use_dropconnect), help="Whether to use dropconnect.")
     parser.add_argument("--use_softermax", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_softermax", model_config_defaults.use_softermax), help="Whether to use softermax.")
     parser.add_argument("--power", type=float, default=get_config_value("model_config", "power", model_config_defaults.power), help="Power for softermax.")
+    parser.add_argument("--use_activation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_activation", model_config_defaults.use_activation), help="Whether to use activation.")
+    parser.add_argument("--use_yatnmn", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_yatnmn", model_config_defaults.use_yatnmn), help="Whether to use YatNMN layers.")
 
     # Data args
     data_config_defaults = default_config.data_config
@@ -127,7 +129,9 @@ def parse_args():
             dropconnect_rate=args.dropconnect_rate,
             use_dropconnect=args.use_dropconnect,
             use_softermax=args.use_softermax,
-            power=args.power
+            power=args.power,
+            use_activation=args.use_activation,
+            use_yatnmn=args.use_yatnmn
         ),
         data_config=DataConfig(
             dataset_name=args.dataset_name,

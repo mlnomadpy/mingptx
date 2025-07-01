@@ -4,32 +4,40 @@ A modular and extensible implementation of a mini-GPT, powered by JAX and Flax. 
 
 ## Features
 
-- **Modular Design**: The project is structured into clear, separate modules for configuration, data handling, and model architecture, promoting code reusability and maintainability.
-- **JAX and Flax**: Leverages the power of JAX for high-performance numerical computing and Flax (NNX) for elegant neural network modeling.
-- **Weights & Biases Integration**: Comes with built-in support for `wandb` to track experiments, log metrics, and visualize model performance.
-- **Hugging Face Datasets**: Seamlessly integrates with the Hugging Face `datasets` library, allowing you to train on a wide variety of text datasets with minimal effort.
-- **Extensible GPT Model**: The GPT model is designed with a base class, making it easy to create and experiment with new transformer architectures.
-- **Multi-Device Support**: Includes support for training on multiple devices (TPUs/GPUs) using JAX's data and model parallelism features.
+- **Modular Design**: Clear, separate modules for configuration, data, and model architecture.
+- **JAX and Flax (NNX)**: High-performance numerical computing and elegant neural network modeling.
+- **YAML-based Configuration**: Easily manage experiments using `config.yaml` with command-line overrides.
+- **Hugging Face Integration**: Seamlessly use `datasets` and `tokenizers`.
+- **Customizable Models**: A base GPT class makes it easy to create and experiment with new architectures.
+- **Custom Loss Functions**: Includes a "Softermax" loss function for experimentation.
+- **Advanced Logging**: Deep dive into your training with detailed logs for determinants, gradients, and batch stats, all integrated with Weights & Biases.
+- **Multi-Device Support**: Natively supports training on multiple GPUs/TPUs.
+- **In-training Text Generation**: Monitor model progress by generating text samples during training.
 
 ## Project Structure
 
 ```
 mingptx/
 ├── src/
-│   ├── train.py          # Main training script
-│   ├── model.py          # Model loader
-│   ├── dataset.py        # Data loading and preprocessing
-│   ├── config.py         # Configuration for model, data, and training
-│   ├── log.py            # Logging utilities
-│   └── models/           # GPT model implementations
-│       ├── gpt.py        # Base GPT model
+│   ├── train.py                    # Main training script
+│   ├── predict.py                  # Script for text generation
+│   ├── model.py                    # Model loader
+│   ├── optimizer.py                # Optimizer creation logic
+│   ├── dataset.py                  # Data loading and preprocessing
+│   ├── config.py                   # Dataclasses for configuration
+│   ├── log.py                      # Logging utilities
+│   ├── losses/                     # Custom loss functions
+│   │   └── softermax...entropy.py
+│   └── models/                     # GPT model implementations
+│       ├── gpt.py                  # Base GPT model
 │       ├── linear/
 │       │   ├── base.py
 │       │   └── mingpt.py
 │       └── aether/
 │           ├── base.py
 │           └── aethergpt.py
-├── train.sh              # Example script to run training
+├── config.yaml                     # Main configuration file
+├── train.sh                        # Example script to run training
 └── README.md
 ```
 
@@ -52,7 +60,6 @@ mingptx/
     ```bash
     pip install -r requirements.txt
     ```
-    *Note: A `requirements.txt` file will be created in the next step.*
 
 ### How to Run
 
@@ -62,21 +69,49 @@ To start the training process, simply run the `train.sh` script:
 bash train.sh
 ```
 
-This will start the training with the default configuration specified in `src/config.py`. You can easily modify the configurations in this file to experiment with different hyperparameters, datasets, or model architectures.
+This will start training with the default configuration specified in `config.yaml`.
 
-### Optimizer Configuration
+## Demos & Pre-trained Models
 
-You can select and configure the optimizer through command-line arguments or by modifying the `train.sh` script. The supported optimizers are `adam` and `adamw`.
+You can try `mingptx` in your browser or download pre-trained models from the following links:
 
--   `--optimizer_name`: Choose the optimizer (e.g., `'adam'`, `'adamw'`).
--   `--learning_rate`: Set the learning rate.
--   `--weight_decay`: Set the weight decay (used with `adamw`).
+- **Colab Notebook**: [Link to Colab]
+- **Kaggle Notebook**: [Link to Kaggle]
+- **Hugging Face Model**: [Link to Hugging Face]
 
-Example `train.sh` usage:
+## Configuration
+
+The primary configuration for the project is managed through the `config.yaml` file. This file is organized into three main sections: `model_config`, `data_config`, and `train_config`.
+
+You can override any setting in `config.yaml` by passing it as a command-line argument to `train.py`. For example, to change the learning rate and batch size:
+
 ```bash
-bash train.sh micro-gpt adamw
+python src/train.py --learning_rate 0.0002 --batch_size 64
 ```
+
+The `train.sh` script provides a convenient way to pass these arguments. For example:
+```bash
+bash train.sh --learning_rate 0.0002 --optimizer_name adamw
+```
+
+## Text Generation
+
+To generate text with a trained model, use the `predict.py` script. It can run in an interactive mode or take a single prompt.
+
+```bash
+# Interactive mode
+python src/predict.py --checkpoint_dir /path/to/your/checkpoint
+
+# Single prompt
+python src/predict.py --checkpoint_dir /path/to/your/checkpoint --prompt "Hello, world!" --max_tokens 100
+```
+
+## Utilities
+
+This project includes several utility scripts in the `src/` directory:
+- `auto_optimize_config.py`: Helps in finding an optimal batch size that maximizes VRAM usage without causing OOM errors.
+- `benchmark_data_loading.py`: Benchmarks the performance of different data loading configurations.
 
 ## Weights & Biases
 
-To use Weights & Biases for experiment tracking, make sure you have an account and are logged in. The training script will automatically log metrics, generated text samples, and training plots to your `wandb` dashboard. You can disable this feature by setting `use_wandb = False` in `src/config.py`.
+To use Weights & Biases for experiment tracking, make sure you have an account and are logged in. The training script will automatically log metrics, generated text samples, and training plots to your `wandb` dashboard. You can disable this feature by setting `use_wandb: False` in `config.yaml`.
