@@ -39,6 +39,7 @@ class DataConfig:
 class TrainConfig:
     optimizer_name: str = "adam"
     num_epochs: int = 1
+    max_iterations: int = -1
     learning_rate: float = 1e-3
     lr_warmup_steps: int = 2000
     lr_num_decay_steps: int = 100000

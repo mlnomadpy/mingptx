@@ -95,6 +95,7 @@ def parse_args():
     train_config_defaults = default_config.train_config
     parser.add_argument("--optimizer_name", type=str, default=get_config_value("train_config", "optimizer_name", train_config_defaults.optimizer_name), help="Optimizer to use (e.g., 'adam', 'adamw').")
     parser.add_argument("--num_epochs", type=int, default=get_config_value("train_config", "num_epochs", train_config_defaults.num_epochs), help="Number of training epochs.")
+    parser.add_argument("--max_iterations", type=int, default=get_config_value("train_config", "max_iterations", train_config_defaults.max_iterations), help="Maximum number of training iterations.")
     parser.add_argument("--learning_rate", type=float, default=get_config_value("train_config", "learning_rate", train_config_defaults.learning_rate), help="Learning rate for the optimizer.")
     parser.add_argument("--lr_warmup_steps", type=int, default=get_config_value("train_config", "lr_warmup_steps", train_config_defaults.lr_warmup_steps), help="Number of warmup steps for learning rate schedule.")
     parser.add_argument("--lr_num_decay_steps", type=int, default=get_config_value("train_config", "lr_num_decay_steps", train_config_defaults.lr_num_decay_steps), help="Number of decay steps for learning rate schedule.")
@@ -152,6 +153,7 @@ def parse_args():
         train_config=TrainConfig(
             optimizer_name=args.optimizer_name,
             num_epochs=args.num_epochs,
+            max_iterations=args.max_iterations,
             learning_rate=args.learning_rate,
             lr_warmup_steps=args.lr_warmup_steps,
             lr_num_decay_steps=args.lr_num_decay_steps,
@@ -278,6 +280,7 @@ def main():
 
     step = 0
     printed_batch_example = False
+    training_complete = False
 
     for epoch in range(config.train_config.num_epochs):
         start_time = time.time()
@@ -373,6 +376,14 @@ def main():
 
             if (step + 1) % config.train_config.text_log_interval == 0:
                 visualize_and_log_loss(metrics_history, logger, step=step + 1)
+
+            if config.train_config.max_iterations > 0 and step >= config.train_config.max_iterations:
+                print(f"Reached max iterations ({config.train_config.max_iterations}), stopping training.")
+                training_complete = True
+                break
+        
+        if training_complete:
+            break
 
     # Final text generation
     if config.train_config.run_generation:

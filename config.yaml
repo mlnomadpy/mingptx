@@ -33,6 +33,7 @@ data_config:
 train_config:
   optimizer_name: "adamw"
   num_epochs: 20
+  max_iterations: 500000
   learning_rate: 0.0003
   lr_warmup_steps: 100
   lr_num_decay_steps: 500000
