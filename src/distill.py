@@ -169,10 +169,9 @@ def main():
     
     def loss_fn(student, teacher_prms, batch, alpha, temp):
         inputs, targets, attention_mask = batch
-        # HF models expect (batch, seq_len), our model expects (seq_len, batch)
-        # Transpose inputs for teacher
-        teacher_inputs = inputs.T
-        teacher_attention_mask = attention_mask.T
+        # Teacher model is already in (batch, seq_len) format.
+        teacher_inputs = inputs
+        teacher_attention_mask = attention_mask
 
         # Get teacher logits (no gradients)
         teacher_outputs = teacher_model(
@@ -180,18 +179,15 @@ def main():
             attention_mask=teacher_attention_mask,
             params=teacher_prms
         )
-        teacher_logits = jax.lax.stop_gradient(teacher_outputs.logits.transpose((1, 0, 2))) # Back to (seq_len, batch, vocab)
+        teacher_logits = jax.lax.stop_gradient(teacher_outputs.logits) # Shape: (batch, seq, vocab)
 
         # Get student logits
-        student_logits = student(inputs, training=True)
+        student_logits = student(inputs, training=True) # Shape: (batch, seq, vocab)
 
         # Create a mask to avoid computing loss on padding tokens.
-        # The mask should be True for positions where the target is a real token.
-        # `attention_mask` is 1 for real tokens and 0 for padding in the input.
-        # Since targets are shifted inputs, we can shift the attention_mask
-        # to get the mask for the targets.
-        target_mask = jnp.concatenate([attention_mask[1:], jnp.zeros((1, attention_mask.shape[1]), dtype=attention_mask.dtype)], axis=0).astype(bool)
-
+        # Shift the attention_mask to align with the targets.
+        target_mask = jnp.concatenate([attention_mask[:, 1:], jnp.zeros((attention_mask.shape[0], 1), dtype=attention_mask.dtype)], axis=1).astype(bool)
+        
         # Count valid positions for proper normalization
         num_valid_tokens = jnp.sum(target_mask)
         
@@ -229,9 +225,10 @@ def main():
         opt.update(grads)
         return metrics  # Return metrics for logging
 
+    # This vmap now operates on axis 0 (the batch dimension) of (batch, seq) shaped tensors
     prep_target_batch = jax.vmap(
         lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
-        in_axes=1, out_axes=1
+        in_axes=0, out_axes=0
     )
 
     # Initial generation comparison
@@ -265,15 +262,17 @@ def main():
         data_iterator = text_dl.as_numpy_iterator()
         
         for batch_data in data_iterator:
-            # Extract input_ids and attention_mask from the batch
-            input_batch = jnp.array(batch_data['input_ids']).T
-            attention_mask = jnp.array(batch_data['attention_mask']).T
+            # Data is now consistently in (batch, seq_len) format
+            input_batch = jnp.array(batch_data['input_ids'])
+            attention_mask = jnp.array(batch_data['attention_mask'])
             
             target_batch = prep_target_batch(input_batch)
             batch = (input_batch, target_batch, attention_mask)
 
             if mesh:
-                batch = jax.device_put(batch, NamedSharding(mesh, P(None, 'batch')))
+                # Shard the batch across devices on the 'batch' axis.
+                # Assumes data is (batch, seq, ...), sharding applies to the first axis.
+                batch = jax.device_put(batch, NamedSharding(mesh, P('batch', None)))
 
             step_metrics = train_step(
                 student_model, teacher_params, optimizer, metrics_manager, batch, 

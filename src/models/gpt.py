@@ -11,11 +11,10 @@ class TokenAndPositionEmbedding(nnx.Module):
         self.pos_emb = nnx.Embed(num_embeddings=config.maxlen, features=config.embed_dim, rngs=rngs)
 
     def __call__(self, x):
-        # x.shape is (seq_len, batch_size)
-        # Create positions based on the sequence length, x.shape[0]
-        positions = jnp.arange(0, x.shape[0])[:, None]
-        position_embedding = self.pos_emb(positions) # Shape: (seq_len, 1, embed_dim)
-        token_embedding = self.token_emb(x) # Shape: (seq_len, batch_size, embed_dim)
+        # x.shape is (batch_size, seq_len)
+        positions = jnp.arange(0, x.shape[1])[None, :] # Shape: (1, seq_len)
+        position_embedding = self.pos_emb(positions)   # Shape: (1, seq_len, embed_dim)
+        token_embedding = self.token_emb(x)           # Shape: (batch_size, seq_len, embed_dim)
         # Broadcast position_embedding across the batch dimension
         return token_embedding + position_embedding
 
@@ -49,9 +48,9 @@ class GPT(nnx.Module):
             else:
                 x = jnp.array(tokens)
 
-            x = x[:, None]
+            x = x[None, :] # Add batch dimension -> (1, seq_len)
             logits = self(x, training=False)
-            next_token = sample_from(logits[sample_index, 0], key)
+            next_token = sample_from(logits[0, sample_index], key)
             return next_token
 
         key = jax.random.PRNGKey(42)  # Base key for reproducibility
