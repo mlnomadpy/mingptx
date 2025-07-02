@@ -2,7 +2,7 @@ import os
 import jax
 import flax.nnx as nnx
 import orbax.checkpoint as orbax
-from jax.sharding import Mesh
+from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental import mesh_utils
 from transformers import AutoTokenizer
 import argparse
@@ -62,6 +62,8 @@ def parse_args():
     parser.add_argument("--use_dropconnect", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_dropconnect", model_config_defaults.use_dropconnect), help="Whether to use dropconnect.")
     parser.add_argument("--use_softermax", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_softermax", model_config_defaults.use_softermax), help="Whether to use softermax.")
     parser.add_argument("--power", type=float, default=get_config_value("model_config", "power", model_config_defaults.power), help="Power for softermax.")
+    parser.add_argument("--use_activation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_activation", model_config_defaults.use_activation), help="Whether to use activation.")
+    parser.add_argument("--use_yatnmn", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_yatnmn", model_config_defaults.use_yatnmn), help="Whether to use yatnmn.")
 
     # Data args (only tokenizer)
     data_config_defaults = default_config.data_config
@@ -89,7 +91,9 @@ def parse_args():
         dropconnect_rate=args.dropconnect_rate,
         use_dropconnect=args.use_dropconnect,
         use_softermax=args.use_softermax,
-        power=args.power
+        power=args.power,
+        use_activation=args.use_activation,
+        use_yatnmn=args.use_yatnmn
     )
     
     return args, model_config
@@ -103,26 +107,37 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Create model
+    # Create model for loading checkpoint
     rngs = nnx.Rngs(0)
     model = create_model(model_config.model_name, model_config, mesh, rngs=rngs)
     
     # Load checkpoint
     checkpointer = orbax.PyTreeCheckpointer()
-    checkpoint_path = os.path.join(args.checkpoint_dir, 'model_checkpoint')
+    checkpoint_path = args.checkpoint_dir
     
     print(f"Loading checkpoint from {checkpoint_path}...")
     
-    abstract_state = jax.eval_shape(lambda: nnx.state(model, nnx.Param))
-    
     try:
+        # Create a template state object with the same structure as the model to be restored
+        # This ensures that the sharding information is correctly applied during restoration
+        abstract_state = jax.eval_shape(lambda: nnx.state(model, nnx.Param))
+        
+        # Load the checkpoint using the abstract state as a template
         restored_state = checkpointer.restore(checkpoint_path, item=abstract_state)
+        
+        # Update the model with the loaded state
+        nnx.update(model, restored_state)
+        
     except FileNotFoundError:
         print(f"Error: Checkpoint not found at {checkpoint_path}")
         print("Please ensure you have a trained model checkpoint in the specified directory.")
         return
-        
-    nnx.update(model, restored_state)
+    except Exception as e:
+        print(f"Error loading checkpoint: {e}")
+        print("This might be due to a mismatch between the model configuration and the saved checkpoint.")
+        print("Please verify that the model configuration matches the one used during training.")
+        print(f"Detailed error: {type(e).__name__}: {str(e)}")
+        return
     
     print("Model loaded successfully.")
     
