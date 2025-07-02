@@ -11,9 +11,12 @@ class TokenAndPositionEmbedding(nnx.Module):
         self.pos_emb = nnx.Embed(num_embeddings=config.maxlen, features=config.embed_dim, rngs=rngs)
 
     def __call__(self, x):
-        positions = jnp.arange(0, x.shape[1])[None, :]
-        position_embedding = self.pos_emb(positions)
-        token_embedding = self.token_emb(x)
+        # x.shape is (seq_len, batch_size)
+        # Create positions based on the sequence length, x.shape[0]
+        positions = jnp.arange(0, x.shape[0])[:, None]
+        position_embedding = self.pos_emb(positions) # Shape: (seq_len, 1, embed_dim)
+        token_embedding = self.token_emb(x) # Shape: (seq_len, batch_size, embed_dim)
+        # Broadcast position_embedding across the batch dimension
         return token_embedding + position_embedding
 
 class GPT(nnx.Module):
@@ -30,12 +33,12 @@ class GPT(nnx.Module):
         
         start_tokens = tokenizer.encode(start_prompt, return_tensors="jax")[0].tolist()
         
-        def sample_from(logits):
+        def sample_from(logits, key):
             logits, indices = jax.lax.top_k(logits, k=top_k)
             logits = nnx.softmax(logits)
-            return jax.random.choice(jax.random.PRNGKey(0), indices, p=logits)
+            return jax.random.choice(key, indices, p=logits)
 
-        def generate_step(tokens):
+        def generate_step(tokens, key):
             pad_len = self.config.maxlen - len(tokens)
             sample_index = len(tokens) - 1
             if pad_len < 0:
@@ -48,12 +51,14 @@ class GPT(nnx.Module):
 
             x = x[:, None]
             logits = self(x, training=False)
-            next_token = sample_from(logits[sample_index, 0])
+            next_token = sample_from(logits[sample_index, 0], key)
             return next_token
 
+        key = jax.random.PRNGKey(42)  # Base key for reproducibility
         generated_tokens = []
         for _ in range(max_tokens):
-            next_token = generate_step(start_tokens + generated_tokens)
+            key, subkey = jax.random.split(key)
+            next_token = generate_step(start_tokens + generated_tokens, subkey)
             if next_token == tokenizer.eos_token_id:
                 break
             generated_tokens.append(int(next_token))
