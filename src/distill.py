@@ -168,7 +168,7 @@ def main():
         teacher_inputs = inputs.T
 
         # Get teacher logits (no gradients)
-        teacher_outputs = teacher_model(input_ids=teacher_inputs, params=teacher_prms, training=False)
+        teacher_outputs = teacher_model(input_ids=teacher_inputs, params=teacher_prms)
         teacher_logits = jax.lax.stop_gradient(teacher_outputs.logits.transpose((1, 0, 2))) # Back to (seq_len, batch, vocab)
 
         # Get student logits
