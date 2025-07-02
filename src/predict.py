@@ -1,5 +1,6 @@
 import os
 import jax
+import jax.tree_util
 import flax.nnx as nnx
 import orbax.checkpoint as orbax
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
@@ -17,7 +18,10 @@ def setup_mesh():
     if num_devices > 1:
         mesh_shape = (jax.local_device_count(), num_devices // jax.local_device_count())
         return Mesh(mesh_utils.create_device_mesh(mesh_shape), ('batch', 'model'))
-    return None
+    else:
+        # For single device, create a minimal mesh for compatibility with sharded checkpoints
+        # This helps when loading checkpoints trained on multi-device setups (like TPU v3-8)
+        return Mesh(devices, ('model',))
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Predict with a mini-GPT model.")
@@ -111,19 +115,38 @@ def main():
     rngs = nnx.Rngs(0)
     model = create_model(model_config.model_name, model_config, mesh, rngs=rngs)
     
-    # Load checkpoint
+    # Load checkpoint using the same approach as training verification
+    # This ensures proper handling of TPU-trained models on different devices
     checkpointer = orbax.PyTreeCheckpointer()
     checkpoint_path = args.checkpoint_dir
     
     print(f"Loading checkpoint from {checkpoint_path}...")
     
     try:
-        # Create a template state object with the same structure as the model to be restored
-        # This ensures that the sharding information is correctly applied during restoration
-        abstract_state = jax.eval_shape(lambda: nnx.state(model, nnx.Param))
-        
-        # Load the checkpoint using the abstract state as a template
-        restored_state = checkpointer.restore(checkpoint_path, item=abstract_state)
+        # For cross-topology restoration (TPU -> CPU/GPU), we need special handling
+        # First attempt: try direct restoration with current topology
+        try:
+            abstract_state = jax.eval_shape(lambda: nnx.state(model, nnx.Param))
+            restored_state = checkpointer.restore(checkpoint_path, item=abstract_state)
+        except ValueError as sharding_error:
+            if "sharding passed to deserialization" in str(sharding_error):
+                print("Detected topology mismatch (likely TPU->CPU/GPU). Using alternative restoration method...")
+                
+                # Alternative approach: Create a new model with no mesh (unsharded)
+                # This bypasses sharding constraints for cross-topology loading
+                print("Creating unsharded model for parameter loading...")
+                temp_rngs = nnx.Rngs(0)  # Use same seed for consistent structure
+                temp_model = create_model(model_config.model_name, model_config, None, rngs=temp_rngs)
+                
+                # Get the abstract state from the unsharded model
+                unsharded_abstract_state = jax.eval_shape(lambda: nnx.state(temp_model, nnx.Param))
+                
+                # Restore to the unsharded structure
+                restored_state = checkpointer.restore(checkpoint_path, item=unsharded_abstract_state)
+                
+                print("Successfully loaded checkpoint with unsharded restoration.")
+            else:
+                raise sharding_error
         
         # Update the model with the loaded state
         nnx.update(model, restored_state)

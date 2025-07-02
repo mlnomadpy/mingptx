@@ -76,6 +76,9 @@ def parse_args():
     parser.add_argument("--log_interval", type=int, default=get_config_value("train_config", "log_interval", train_config_defaults.log_interval), help="Interval for logging metrics.")
     parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "use_wandb", train_config_defaults.use_wandb), help="Whether to use wandb for logging.")
     parser.add_argument("--checkpoint_dir", type=str, default=get_config_value("train_config", "checkpoint_dir", train_config_defaults.checkpoint_dir), help="Directory to save checkpoints.")
+    parser.add_argument("--start_prompt", type=str, default=get_config_value("train_config", "start_prompt", train_config_defaults.start_prompt), help="Start prompt for text generation.")
+    parser.add_argument("--text_log_interval", type=int, default=get_config_value("train_config", "text_log_interval", train_config_defaults.text_log_interval), help="Interval for logging generated text.")
+    parser.add_argument("--run_generation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "run_generation", train_config_defaults.run_generation), help="Whether to run text generation.")
     
     # Distill args
     distill_config_defaults = default_config.distill_config
@@ -109,6 +112,9 @@ def parse_args():
             log_interval=args.log_interval,
             use_wandb=args.use_wandb,
             checkpoint_dir=args.checkpoint_dir,
+            start_prompt=args.start_prompt,
+            text_log_interval=args.text_log_interval,
+            run_generation=args.run_generation,
         ),
         distill_config=DistillConfig(
             teacher_model_name=args.teacher_model_name,
@@ -206,6 +212,32 @@ def main():
         in_axes=1, out_axes=1
     )
 
+    # Initial generation comparison
+    if config.train_config.run_generation:
+        print("\n=== Initial Generation Comparison ===")
+        try:
+            student_initial = student_model.generate_text(
+                max_tokens=50, start_prompt=config.train_config.start_prompt, tokenizer=tokenizer
+            )
+            print(f"Initial Student: {student_initial}")
+            logger.log_text("initial_student_generation", student_initial, step=0)
+        except Exception as e:
+            print(f"Initial student generation failed: {e}")
+        
+        try:
+            input_ids = tokenizer.encode(config.train_config.start_prompt, return_tensors="jax")
+            teacher_initial_outputs = teacher_model.generate(
+                input_ids=input_ids, params=teacher_params, max_new_tokens=50,
+                do_sample=True, temperature=1.0, top_k=10,
+                pad_token_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id
+            )
+            teacher_initial = tokenizer.decode(teacher_initial_outputs.sequences[0], skip_special_tokens=True)
+            print(f"Initial Teacher: {teacher_initial}")
+            logger.log_text("initial_teacher_generation", teacher_initial, step=0)
+        except Exception as e:
+            print(f"Initial teacher generation failed: {e}")
+        print("=== End Initial Generation ===\n")
+
     step = 0
     for epoch in range(config.train_config.num_epochs):
         data_iterator = text_dl.as_numpy_iterator()
@@ -231,6 +263,32 @@ def main():
                 metrics_manager.reset()
                 print(f"Step {step + 1}, Loss: {log_metrics['loss']:.4f}, Distill Loss: {log_metrics['distill_loss']:.4f}, Student Loss: {log_metrics['student_loss']:.4f}")
 
+            # Periodic generation comparison
+            if (step + 1) % config.train_config.text_log_interval == 0 and config.train_config.run_generation:
+                print(f"\n=== Generation Comparison at Step {step + 1} ===")
+                try:
+                    student_text = student_model.generate_text(
+                        max_tokens=50, start_prompt=config.train_config.start_prompt, tokenizer=tokenizer
+                    )
+                    print(f"Student: {student_text}")
+                    logger.log_text("student_generation", student_text, step=step + 1)
+                except Exception as e:
+                    print(f"Student generation failed: {e}")
+                
+                try:
+                    input_ids = tokenizer.encode(config.train_config.start_prompt, return_tensors="jax")
+                    teacher_outputs = teacher_model.generate(
+                        input_ids=input_ids, params=teacher_params, max_new_tokens=50,
+                        do_sample=True, temperature=1.0, top_k=10,
+                        pad_token_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id
+                    )
+                    teacher_text = tokenizer.decode(teacher_outputs.sequences[0], skip_special_tokens=True)
+                    print(f"Teacher: {teacher_text}")
+                    logger.log_text("teacher_generation", teacher_text, step=step + 1)
+                except Exception as e:
+                    print(f"Teacher generation failed: {e}")
+                print("=== End Generation Comparison ===\n")
+
             step += 1
 
     # Save student model checkpoint
@@ -241,6 +299,64 @@ def main():
     checkpoint_path = os.path.join(save_dir, f'{config.model_config.model_name}_distilled')
     checkpointer.save(checkpoint_path, state)
     print(f"Distilled student model saved to {checkpoint_path}")
+    
+    # Generation test to compare teacher and student models
+    print("\n=== Generation Comparison Test ===")
+    test_prompt = config.train_config.start_prompt
+    max_gen_tokens = 50  # Generate 50 tokens for comparison
+    
+    print(f"Test prompt: '{test_prompt}'")
+    print(f"Generating {max_gen_tokens} tokens...\n")
+    
+    # Generate text with student model
+    print("Student model generation:")
+    try:
+        student_text = student_model.generate_text(
+            max_tokens=max_gen_tokens,
+            start_prompt=test_prompt,
+            tokenizer=tokenizer
+        )
+        print(f"Student: {student_text}")
+    except Exception as e:
+        print(f"Student generation failed: {e}")
+        student_text = "Failed to generate"
+    
+    # Generate text with teacher model
+    print("\nTeacher model generation:")
+    try:
+        # Tokenize the prompt
+        input_ids = tokenizer.encode(test_prompt, return_tensors="jax")
+        
+        # Generate with teacher model (HuggingFace)
+        teacher_outputs = teacher_model.generate(
+            input_ids=input_ids,
+            params=teacher_params,
+            max_new_tokens=max_gen_tokens,
+            do_sample=True,
+            temperature=1.0,
+            top_k=10,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id
+        )
+        
+        # Decode the generated text
+        teacher_text = tokenizer.decode(teacher_outputs.sequences[0], skip_special_tokens=True)
+        print(f"Teacher: {teacher_text}")
+    except Exception as e:
+        print(f"Teacher generation failed: {e}")
+        teacher_text = "Failed to generate"
+    
+    # Log the comparison
+    logger.log_metrics({
+        'generation_test_completed': 1,
+        'student_generation_length': len(student_text),
+        'teacher_generation_length': len(teacher_text)
+    }, step=step)
+    
+    logger.log_text("final_student_generation", student_text, step=step)
+    logger.log_text("final_teacher_generation", teacher_text, step=step)
+    
+    print("\n=== End Generation Comparison ===")
     
     logger.finish()
 
