@@ -60,7 +60,15 @@ class TrainConfig:
     loss_function: str = "optax"  # 'optax' or 'softermax'
 
 @dataclass
+class DistillConfig:
+    """Configuration for distillation."""
+    teacher_model_name: str = "gpt2"
+    distillation_alpha: float = 0.5
+    distillation_temperature: float = 2.0
+
+@dataclass
 class ProjectConfig:
     model_config: ModelConfig = field(default_factory=ModelConfig)
     data_config: DataConfig = field(default_factory=DataConfig)
-    train_config: TrainConfig = field(default_factory=TrainConfig) 
+    train_config: TrainConfig = field(default_factory=TrainConfig)
+    distill_config: DistillConfig = field(default_factory=DistillConfig) 

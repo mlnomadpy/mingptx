@@ -1,0 +1,247 @@
+import os
+import time
+import jax
+import jax.numpy as jnp
+import flax.nnx as nnx
+import optax
+import orbax.checkpoint as orbax
+import grain.python as grain
+from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
+from jax.experimental import mesh_utils
+from transformers import AutoTokenizer, FlaxAutoModelForCausalLM
+import argparse
+import yaml
+import numpy as np
+
+from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig, DistillConfig
+from dataset import load_text_dataset
+from model import create_model
+from optimizer import create_optimizer
+from log import Logger, visualize_and_log_loss, flatten_for_logging, get_flat_determinants
+
+def setup_mesh():
+    devices = jax.devices()
+    num_devices = len(devices)
+    if num_devices > 1:
+        mesh_shape = (jax.local_device_count(), num_devices // jax.local_device_count())
+        return Mesh(mesh_utils.create_device_mesh(mesh_shape), ('batch', 'model'))
+    return None
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Distill a GPT model.")
+    
+    parser.add_argument("--config", type=str, default="config.yaml", help="Path to the YAML config file.")
+    
+    config_args, _ = parser.parse_known_args()
+
+    try:
+        with open(config_args.config, 'r') as f:
+            yaml_config = yaml.safe_load(f)
+    except FileNotFoundError:
+        print(f"Warning: Config file not found at {config_args.config}. Using default values.")
+        yaml_config = {}
+
+    parser = argparse.ArgumentParser(description="Distill a GPT model.")
+    parser.add_argument("--config", type=str, default=config_args.config, help="Path to the YAML config file.")
+    
+    default_config = ProjectConfig()
+
+    def get_config_value(section, key, default_value):
+        return yaml_config.get(section, {}).get(key, default_value)
+
+    # Model args (Student)
+    model_config_defaults = default_config.model_config
+    parser.add_argument("--model_name", type=str, default=get_config_value("model_config", "model_name", model_config_defaults.model_name), help="Name of the student model to train.")
+    # ... (rest of model args are for student)
+    parser.add_argument("--maxlen", type=int, default=get_config_value("model_config", "maxlen", model_config_defaults.maxlen), help="Maximum sequence length.")
+    parser.add_argument("--vocab_size", type=int, default=get_config_value("model_config", "vocab_size", model_config_defaults.vocab_size), help="Vocabulary size.")
+    parser.add_argument("--embed_dim", type=int, default=get_config_value("model_config", "embed_dim", model_config_defaults.embed_dim), help="Embedding dimensionality.")
+    parser.add_argument("--num_heads", type=int, default=get_config_value("model_config", "num_heads", model_config_defaults.num_heads), help="Number of attention heads.")
+    parser.add_argument("--feed_forward_dim", type=int, default=get_config_value("model_config", "feed_forward_dim", model_config_defaults.feed_forward_dim), help="Dimensionality of the feed-forward network.")
+    parser.add_argument("--num_transformer_blocks", type=int, default=get_config_value("model_config", "num_transformer_blocks", model_config_defaults.num_transformer_blocks), help="Number of transformer blocks.")
+    parser.add_argument("--dropout_rate", type=float, default=get_config_value("model_config", "dropout_rate", model_config_defaults.dropout_rate), help="Dropout rate.")
+
+    # Data args
+    data_config_defaults = default_config.data_config
+    parser.add_argument("--dataset_name", type=str, default=get_config_value("data_config", "dataset_name", data_config_defaults.dataset_name), help="Hugging Face dataset name.")
+    parser.add_argument("--split", type=str, default=get_config_value("data_config", "split", data_config_defaults.split), help="Dataset split to use.")
+    parser.add_argument("--batch_size", type=int, default=get_config_value("data_config", "batch_size", data_config_defaults.batch_size), help="Batch size for training.")
+    parser.add_argument("--tokenizer_name", type=str, default=get_config_value("data_config", "tokenizer_name", data_config_defaults.tokenizer_name), help="Tokenizer to use (should match teacher).")
+
+    # Train args
+    train_config_defaults = default_config.train_config
+    parser.add_argument("--optimizer_name", type=str, default=get_config_value("train_config", "optimizer_name", train_config_defaults.optimizer_name), help="Optimizer to use (e.g., 'adam', 'adamw').")
+    parser.add_argument("--num_epochs", type=int, default=get_config_value("train_config", "num_epochs", train_config_defaults.num_epochs), help="Number of training epochs.")
+    parser.add_argument("--learning_rate", type=float, default=get_config_value("train_config", "learning_rate", train_config_defaults.learning_rate), help="Learning rate for the optimizer.")
+    parser.add_argument("--log_interval", type=int, default=get_config_value("train_config", "log_interval", train_config_defaults.log_interval), help="Interval for logging metrics.")
+    parser.add_argument("--use_wandb", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("train_config", "use_wandb", train_config_defaults.use_wandb), help="Whether to use wandb for logging.")
+    parser.add_argument("--checkpoint_dir", type=str, default=get_config_value("train_config", "checkpoint_dir", train_config_defaults.checkpoint_dir), help="Directory to save checkpoints.")
+    
+    # Distill args
+    distill_config_defaults = default_config.distill_config
+    parser.add_argument("--teacher_model_name", type=str, default=get_config_value("distill_config", "teacher_model_name", distill_config_defaults.teacher_model_name), help="Name of the teacher model (from Hugging Face).")
+    parser.add_argument("--distillation_alpha", type=float, default=get_config_value("distill_config", "distillation_alpha", distill_config_defaults.distillation_alpha), help="Weight for the distillation loss component.")
+    parser.add_argument("--distillation_temperature", type=float, default=get_config_value("distill_config", "distillation_temperature", distill_config_defaults.distillation_temperature), help="Temperature for softening probability distributions.")
+
+    args = parser.parse_args()
+    
+    config = ProjectConfig(
+        model_config=ModelConfig(
+            model_name=args.model_name,
+            maxlen=args.maxlen,
+            vocab_size=args.vocab_size,
+            embed_dim=args.embed_dim,
+            num_heads=args.num_heads,
+            feed_forward_dim=args.feed_forward_dim,
+            num_transformer_blocks=args.num_transformer_blocks,
+            dropout_rate=args.dropout_rate,
+        ),
+        data_config=DataConfig(
+            dataset_name=args.dataset_name,
+            split=args.split,
+            batch_size=args.batch_size,
+            tokenizer_name=args.tokenizer_name,
+        ),
+        train_config=TrainConfig(
+            optimizer_name=args.optimizer_name,
+            num_epochs=args.num_epochs,
+            learning_rate=args.learning_rate,
+            log_interval=args.log_interval,
+            use_wandb=args.use_wandb,
+            checkpoint_dir=args.checkpoint_dir,
+        ),
+        distill_config=DistillConfig(
+            teacher_model_name=args.teacher_model_name,
+            distillation_alpha=args.distillation_alpha,
+            distillation_temperature=args.distillation_temperature,
+        )
+    )
+    return config
+
+def main():
+    config = parse_args()
+    mesh = setup_mesh()
+
+    logger = Logger(project_name="mingptx-distill", config={
+        "student_model": config.model_config,
+        "data": config.data_config,
+        "train": config.train_config,
+        "distill": config.distill_config
+    }, use_wandb=config.train_config.use_wandb)
+
+    # Load tokenizer from teacher model
+    tokenizer = AutoTokenizer.from_pretrained(config.distill_config.teacher_model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    # Ensure student vocab size matches tokenizer
+    config.model_config.vocab_size = tokenizer.vocab_size
+
+    # Load data
+    text_dl = load_text_dataset(config.data_config, config.model_config, config.train_config, config.data_config.tokenizer_name, tokenizer.pad_token_id)
+
+    # Load Teacher Model
+    print(f"Loading teacher model: {config.distill_config.teacher_model_name}")
+    teacher_model = FlaxAutoModelForCausalLM.from_pretrained(config.distill_config.teacher_model_name)
+    
+    # Create Student Model
+    rngs = nnx.Rngs(0)
+    student_model = create_model(config.model_config.model_name, config.model_config, mesh, rngs=rngs)
+    
+    params = nnx.state(student_model, nnx.Param)
+    num_params = sum(p.size for p in jax.tree_util.tree_leaves(params))
+    print(f"Number of student model parameters: {num_params / 1e6:.2f}M")
+    logger.log_metrics({'student_num_params': num_params}, step=0)
+
+    optimizer = create_optimizer(student_model, config)
+    metrics_manager = nnx.MultiMetric(
+        loss=nnx.metrics.Average('loss'),
+        distill_loss=nnx.metrics.Average('distill_loss'),
+        student_loss=nnx.metrics.Average('student_loss')
+    )
+    
+    def loss_fn(student, teacher, batch, alpha, temp):
+        inputs, targets = batch
+        # HF models expect (batch, seq_len), our model expects (seq_len, batch)
+        # Transpose inputs for teacher
+        teacher_inputs = inputs.T
+
+        # Get teacher logits (no gradients)
+        teacher_outputs = teacher(teacher_inputs)
+        teacher_logits = jax.lax.stop_gradient(teacher_outputs.logits.transpose((1, 0, 2))) # Back to (seq_len, batch, vocab)
+
+        # Get student logits
+        student_logits = student(inputs, training=True)
+
+        # Mask for padding tokens
+        mask = targets != tokenizer.pad_token_id
+        
+        # Distillation loss (KL divergence)
+        soft_teacher_logits = jax.nn.log_softmax(teacher_logits / temp)
+        soft_student_logits = jax.nn.log_softmax(student_logits / temp)
+        
+        # KL divergence loss expects sum over last axis
+        kl_div = jnp.sum(jnp.exp(soft_teacher_logits) * (soft_teacher_logits - soft_student_logits), axis=-1)
+        distill_loss = jnp.sum(kl_div * mask) / jnp.sum(mask)
+
+        # Student loss (cross-entropy)
+        ce_loss = optax.softmax_cross_entropy_with_integer_labels(student_logits, targets)
+        student_loss = jnp.sum(ce_loss * mask) / jnp.sum(mask)
+        
+        # Total loss
+        total_loss = alpha * distill_loss + (1.0 - alpha) * student_loss
+        
+        return total_loss, (distill_loss, student_loss)
+
+    @nnx.jit
+    def train_step(stdnt, tchr, opt, mets, b, alpha, temp):
+        grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
+        (loss, (d_loss, s_loss)), grads = grad_fn(stdnt, tchr, b, alpha, temp)
+        mets.update(loss=loss, distill_loss=d_loss, student_loss=s_loss)
+        opt.update(grads)
+
+    prep_target_batch = jax.vmap(
+        lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
+        in_axes=1, out_axes=1
+    )
+
+    step = 0
+    for epoch in range(config.train_config.num_epochs):
+        data_iterator = text_dl.as_numpy_iterator()
+        
+        for batch_data in data_iterator:
+            input_batch = jnp.array(batch_data).T
+            target_batch = prep_target_batch(input_batch)
+            batch = (input_batch, target_batch)
+
+            if mesh:
+                batch = jax.device_put(batch, NamedSharding(mesh, P(None, 'batch')))
+
+            train_step(
+                student_model, teacher_model, optimizer, metrics_manager, batch, 
+                config.distill_config.distillation_alpha, 
+                config.distill_config.distillation_temperature
+            )
+
+            if (step + 1) % config.train_config.log_interval == 0:
+                computed_metrics = metrics_manager.compute()
+                log_metrics = {k: v.item() for k, v in computed_metrics.items()}
+                logger.log_metrics(log_metrics, step=step + 1)
+                metrics_manager.reset()
+                print(f"Step {step + 1}, Loss: {log_metrics['loss']:.4f}, Distill Loss: {log_metrics['distill_loss']:.4f}, Student Loss: {log_metrics['student_loss']:.4f}")
+
+            step += 1
+
+    # Save student model checkpoint
+    state = nnx.state(student_model, nnx.Param)
+    checkpointer = orbax.PyTreeCheckpointer()
+    save_dir = os.path.abspath(config.train_config.checkpoint_dir)
+    os.makedirs(save_dir, exist_ok=True)
+    checkpoint_path = os.path.join(save_dir, f'{config.model_config.model_name}_distilled')
+    checkpointer.save(checkpoint_path, state)
+    print(f"Distilled student model saved to {checkpoint_path}")
+    
+    logger.finish()
+
+if __name__ == "__main__":
+    main() 
