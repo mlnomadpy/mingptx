@@ -215,17 +215,14 @@ def main():
     
     # Loss function
     def loss_fn(mdl, batch):
-        logits = mdl(batch[0], training=True)
-        labels = batch[1]
+        inputs, labels, attention_mask = batch
+        logits = mdl(inputs, training=True)
         
         # Calculate loss per token based on the configured loss function
         if config.train_config.loss_function == "softermax":
             # Use our custom softermax implementation
             # Use the power from model config if using softermax in attention, otherwise default to 1.0
             power = config.model_config.power if config.model_config.use_softermax else 1.0
-            
-            # One-hot encode the labels
-            # one_hot_labels = jax.nn.one_hot(labels, num_classes=config.model_config.vocab_size)
             
             token_losses = softermax_cross_entropy_with_integer_labels(
                 logits=logits, 
@@ -236,19 +233,42 @@ def main():
             # Use optax standard softmax cross entropy
             token_losses = optax.softmax_cross_entropy_with_integer_labels(logits=logits, labels=labels)
         
-        # Create a mask to ignore padding tokens
-        mask = labels != tokenizer.pad_token_id
+        # Create comprehensive mask combining attention mask and target validity
+        # attention_mask: 1 for real tokens, 0 for padding
+        sequence_mask = attention_mask.astype(bool)
         
-        # Calculate the mean loss only over non-padded tokens
-        loss = jnp.sum(token_losses * mask) / jnp.sum(mask)
+        # For causal LM, we don't predict the token after the last real token
+        # Shift sequence_mask to align with targets (targets are inputs shifted left)
+        target_mask = jnp.concatenate([sequence_mask[1:], jnp.zeros((1, sequence_mask.shape[1]), dtype=bool)], axis=0)
         
-        return loss, logits
+        # Additional safety: ensure targets are valid (not padding tokens)
+        valid_target_mask = labels != tokenizer.pad_token_id
+        
+        # Combine all masking conditions
+        final_mask = target_mask & valid_target_mask
+        
+        # Count valid positions for proper normalization
+        num_valid_tokens = jnp.sum(final_mask)
+        
+        # Avoid division by zero
+        num_valid_tokens = jnp.maximum(num_valid_tokens, 1.0)
+        
+        # Calculate the mean loss only over valid tokens
+        loss = jnp.sum(token_losses * final_mask) / num_valid_tokens
+        
+        # Return additional metrics for monitoring
+        metrics = {
+            'num_valid_tokens': num_valid_tokens,
+            'mask_ratio': num_valid_tokens / (final_mask.shape[0] * final_mask.shape[1])
+        }
+        
+        return loss, (logits, metrics)
 
     # Training step
     @nnx.jit
     def train_step(mdl, opt, mets, b):
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-        (loss, _), grads = grad_fn(mdl, b)
+        (loss, (logits, metrics)), grads = grad_fn(mdl, b)
         mets.update(loss=loss)
         opt.update(grads)
 
@@ -256,7 +276,7 @@ def main():
         if config.train_config.log_gradients:
             grad_norms = jax.tree_util.tree_map(lambda x: jnp.linalg.norm(x) if x is not None else 0.0, grads)
         
-        return grad_norms
+        return grad_norms, metrics
 
     # Initial text generation
     start_prompt = config.train_config.start_prompt
@@ -299,10 +319,9 @@ def main():
             data_iterator = text_dl
 
         for batch_data in data_iterator:
-            # The data loader returns (batch_size, maxlen) as a numpy array.
-            # The model expects (maxlen, batch_size), so we transpose.
-            # We convert to jnp.array to use jax.vmap.
-            input_batch = jnp.array(batch_data).T
+            # Extract input_ids and attention_mask from the batch
+            input_batch = jnp.array(batch_data['input_ids']).T
+            attention_mask = jnp.array(batch_data['attention_mask']).T
             
             # Create target by shifting input using the vmapped function
             target_batch = prep_target_batch(input_batch)
@@ -312,6 +331,7 @@ def main():
                 # Print the first sequence in the batch
                 print("Input Batch Example (first sequence):", input_batch[:, 0])
                 print("Target Batch Example (first sequence):", target_batch[:, 0])
+                print("Attention Mask Example (first sequence):", attention_mask[:, 0])
                 
                 # Decode to see the text for more clarity
                 # The .T is to get a single sequence for decoding
@@ -321,13 +341,13 @@ def main():
                 print("--- End Batch Example ---\n")
                 printed_batch_example = True
 
-            batch_data = (input_batch, target_batch)
+            batch_data = (input_batch, target_batch, attention_mask)
 
             if mesh:
                 # Shard the batch dimension (axis 1) across the 'batch' mesh axis
                 batch_data = jax.device_put(batch_data, NamedSharding(mesh, P(None, 'batch')))
             
-            grad_norms = train_step(model, optimizer, metrics_manager, batch_data)
+            grad_norms, step_metrics = train_step(model, optimizer, metrics_manager, batch_data)
 
             if (step + 1) % config.train_config.log_interval == 0:
                 computed_metrics = metrics_manager.compute()
@@ -338,6 +358,12 @@ def main():
                 elapsed_time = time.time() - start_time
                 
                 log_metrics = {'train_loss': loss_value, 'elapsed_time': elapsed_time}
+                
+                # Add the additional metrics from the latest step
+                log_metrics.update({
+                    'num_valid_tokens': float(step_metrics['num_valid_tokens']),
+                    'mask_ratio': float(step_metrics['mask_ratio'])
+                })
                 
                 # Consolidate all optional metrics into a single dictionary
                 optional_metrics = {}

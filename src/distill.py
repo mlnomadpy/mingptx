@@ -273,14 +273,9 @@ def main():
         data_iterator = text_dl.as_numpy_iterator()
         
         for batch_data in data_iterator:
-            if isinstance(batch_data, dict):
-                # New format with attention masks
-                input_batch = jnp.array(batch_data['input_ids']).T
-                attention_mask = jnp.array(batch_data['attention_mask']).T
-            else:
-                # Legacy format - fallback to old behavior
-                input_batch = jnp.array(batch_data).T
-                attention_mask = (input_batch != tokenizer.pad_token_id).astype(jnp.int32)
+            # Extract input_ids and attention_mask from the batch
+            input_batch = jnp.array(batch_data['input_ids']).T
+            attention_mask = jnp.array(batch_data['attention_mask']).T
             
             target_batch = prep_target_batch(input_batch)
             batch = (input_batch, target_batch, attention_mask)
