@@ -1,4 +1,3 @@
-
 import jax
 import jax.numpy as jnp
 import flax.nnx as nnx
@@ -47,9 +46,9 @@ class GPT(nnx.Module):
             else:
                 x = jnp.array(tokens)
 
-            x = x[None, :]
+            x = x[:, None]
             logits = self(x, training=False)
-            next_token = sample_from(logits[0][sample_index])
+            next_token = sample_from(logits[sample_index, 0])
             return next_token
 
         generated_tokens = []

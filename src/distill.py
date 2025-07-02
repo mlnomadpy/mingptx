@@ -185,23 +185,15 @@ def main():
         # Get student logits
         student_logits = student(inputs, training=True)
 
-        # Create comprehensive mask combining attention mask and target validity
-        # attention_mask: 1 for real tokens, 0 for padding
-        # We want to mask out: padding tokens AND the last position (no next token to predict)
-        sequence_mask = attention_mask.astype(bool)
-        
-        # For causal LM, we don't predict the token after the last real token
-        # Shift sequence_mask to align with targets (targets are inputs shifted left)
-        target_mask = jnp.concatenate([sequence_mask[1:], jnp.zeros((1, sequence_mask.shape[1]), dtype=bool)], axis=0)
-        
-        # Additional safety: ensure targets are valid (not padding tokens)
-        valid_target_mask = targets != tokenizer.pad_token_id
-        
-        # Combine all masking conditions
-        final_mask = target_mask & valid_target_mask
-        
+        # Create a mask to avoid computing loss on padding tokens.
+        # The mask should be True for positions where the target is a real token.
+        # `attention_mask` is 1 for real tokens and 0 for padding in the input.
+        # Since targets are shifted inputs, we can shift the attention_mask
+        # to get the mask for the targets.
+        target_mask = jnp.concatenate([attention_mask[1:], jnp.zeros((1, attention_mask.shape[1]), dtype=attention_mask.dtype)], axis=0).astype(bool)
+
         # Count valid positions for proper normalization
-        num_valid_tokens = jnp.sum(final_mask)
+        num_valid_tokens = jnp.sum(target_mask)
         
         # Avoid division by zero
         num_valid_tokens = jnp.maximum(num_valid_tokens, 1.0)
@@ -212,11 +204,11 @@ def main():
         
         # KL divergence: KL(P_teacher || P_student) = sum(P_teacher * log(P_teacher / P_student))
         kl_div = jnp.sum(jnp.exp(soft_teacher_logits) * (soft_teacher_logits - soft_student_logits), axis=-1)
-        distill_loss = jnp.sum(kl_div * final_mask) / num_valid_tokens
+        distill_loss = jnp.sum(kl_div * target_mask) / num_valid_tokens
 
         # Student loss (cross-entropy) - only on valid positions
         ce_loss = optax.softmax_cross_entropy_with_integer_labels(student_logits, targets)
-        student_loss = jnp.sum(ce_loss * final_mask) / num_valid_tokens
+        student_loss = jnp.sum(ce_loss * target_mask) / num_valid_tokens
         
         # Total loss
         total_loss = alpha * distill_loss + (1.0 - alpha) * student_loss
@@ -224,7 +216,7 @@ def main():
         # Return additional metrics for monitoring
         metrics = {
             'num_valid_tokens': num_valid_tokens,
-            'mask_ratio': num_valid_tokens / (final_mask.shape[0] * final_mask.shape[1])
+            'mask_ratio': num_valid_tokens / (target_mask.shape[0] * target_mask.shape[1])
         }
         
         return total_loss, (distill_loss, student_loss, metrics)
