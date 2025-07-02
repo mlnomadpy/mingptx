@@ -143,6 +143,7 @@ def main():
     # Load Teacher Model
     print(f"Loading teacher model: {config.distill_config.teacher_model_name}")
     teacher_model = FlaxAutoModelForCausalLM.from_pretrained(config.distill_config.teacher_model_name)
+    teacher_params = teacher_model.params
     
     # Create Student Model
     rngs = nnx.Rngs(0)
@@ -160,14 +161,14 @@ def main():
         student_loss=nnx.metrics.Average('student_loss')
     )
     
-    def loss_fn(student, teacher, batch, alpha, temp):
+    def loss_fn(student, teacher_prms, batch, alpha, temp):
         inputs, targets = batch
         # HF models expect (batch, seq_len), our model expects (seq_len, batch)
         # Transpose inputs for teacher
         teacher_inputs = inputs.T
 
         # Get teacher logits (no gradients)
-        teacher_outputs = teacher(teacher_inputs)
+        teacher_outputs = teacher_model.apply({'params': teacher_prms}, teacher_inputs)
         teacher_logits = jax.lax.stop_gradient(teacher_outputs.logits.transpose((1, 0, 2))) # Back to (seq_len, batch, vocab)
 
         # Get student logits
@@ -194,9 +195,9 @@ def main():
         return total_loss, (distill_loss, student_loss)
 
     @nnx.jit
-    def train_step(stdnt, tchr, opt, mets, b, alpha, temp):
+    def train_step(stdnt, tchr_prms, opt, mets, b, alpha, temp):
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-        (loss, (d_loss, s_loss)), grads = grad_fn(stdnt, tchr, b, alpha, temp)
+        (loss, (d_loss, s_loss)), grads = grad_fn(stdnt, tchr_prms, b, alpha, temp)
         mets.update(loss=loss, distill_loss=d_loss, student_loss=s_loss)
         opt.update(grads)
 
@@ -218,7 +219,7 @@ def main():
                 batch = jax.device_put(batch, NamedSharding(mesh, P(None, 'batch')))
 
             train_step(
-                student_model, teacher_model, optimizer, metrics_manager, batch, 
+                student_model, teacher_params, optimizer, metrics_manager, batch, 
                 config.distill_config.distillation_alpha, 
                 config.distill_config.distillation_temperature
             )
