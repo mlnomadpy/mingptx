@@ -168,44 +168,74 @@ def main():
     )
     
     def loss_fn(student, teacher_prms, batch, alpha, temp):
-        inputs, targets = batch
+        inputs, targets, attention_mask = batch
         # HF models expect (batch, seq_len), our model expects (seq_len, batch)
         # Transpose inputs for teacher
         teacher_inputs = inputs.T
+        teacher_attention_mask = attention_mask.T
 
         # Get teacher logits (no gradients)
-        teacher_outputs = teacher_model(input_ids=teacher_inputs, params=teacher_prms)
+        teacher_outputs = teacher_model(
+            input_ids=teacher_inputs, 
+            attention_mask=teacher_attention_mask,
+            params=teacher_prms
+        )
         teacher_logits = jax.lax.stop_gradient(teacher_outputs.logits.transpose((1, 0, 2))) # Back to (seq_len, batch, vocab)
 
         # Get student logits
         student_logits = student(inputs, training=True)
 
-        # Mask for padding tokens
-        mask = targets != tokenizer.pad_token_id
+        # Create comprehensive mask combining attention mask and target validity
+        # attention_mask: 1 for real tokens, 0 for padding
+        # We want to mask out: padding tokens AND the last position (no next token to predict)
+        sequence_mask = attention_mask.astype(bool)
         
-        # Distillation loss (KL divergence)
+        # For causal LM, we don't predict the token after the last real token
+        # Shift sequence_mask to align with targets (targets are inputs shifted left)
+        target_mask = jnp.concatenate([sequence_mask[1:], jnp.zeros((1, sequence_mask.shape[1]), dtype=bool)], axis=0)
+        
+        # Additional safety: ensure targets are valid (not padding tokens)
+        valid_target_mask = targets != tokenizer.pad_token_id
+        
+        # Combine all masking conditions
+        final_mask = target_mask & valid_target_mask
+        
+        # Count valid positions for proper normalization
+        num_valid_tokens = jnp.sum(final_mask)
+        
+        # Avoid division by zero
+        num_valid_tokens = jnp.maximum(num_valid_tokens, 1.0)
+        
+        # Distillation loss (KL divergence) - only on valid positions
         soft_teacher_logits = jax.nn.log_softmax(teacher_logits / temp)
         soft_student_logits = jax.nn.log_softmax(student_logits / temp)
         
-        # KL divergence loss expects sum over last axis
+        # KL divergence: KL(P_teacher || P_student) = sum(P_teacher * log(P_teacher / P_student))
         kl_div = jnp.sum(jnp.exp(soft_teacher_logits) * (soft_teacher_logits - soft_student_logits), axis=-1)
-        distill_loss = jnp.sum(kl_div * mask) / jnp.sum(mask)
+        distill_loss = jnp.sum(kl_div * final_mask) / num_valid_tokens
 
-        # Student loss (cross-entropy)
+        # Student loss (cross-entropy) - only on valid positions
         ce_loss = optax.softmax_cross_entropy_with_integer_labels(student_logits, targets)
-        student_loss = jnp.sum(ce_loss * mask) / jnp.sum(mask)
+        student_loss = jnp.sum(ce_loss * final_mask) / num_valid_tokens
         
         # Total loss
         total_loss = alpha * distill_loss + (1.0 - alpha) * student_loss
         
-        return total_loss, (distill_loss, student_loss)
+        # Return additional metrics for monitoring
+        metrics = {
+            'num_valid_tokens': num_valid_tokens,
+            'mask_ratio': num_valid_tokens / (final_mask.shape[0] * final_mask.shape[1])
+        }
+        
+        return total_loss, (distill_loss, student_loss, metrics)
 
     @nnx.jit
     def train_step(stdnt, tchr_prms, opt, mets, b, alpha, temp):
         grad_fn = nnx.value_and_grad(loss_fn, has_aux=True)
-        (loss, (d_loss, s_loss)), grads = grad_fn(stdnt, tchr_prms, b, alpha, temp)
+        (loss, (d_loss, s_loss, metrics)), grads = grad_fn(stdnt, tchr_prms, b, alpha, temp)
         mets.update(loss=loss, distill_loss=d_loss, student_loss=s_loss)
         opt.update(grads)
+        return metrics  # Return metrics for logging
 
     prep_target_batch = jax.vmap(
         lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
@@ -243,14 +273,22 @@ def main():
         data_iterator = text_dl.as_numpy_iterator()
         
         for batch_data in data_iterator:
-            input_batch = jnp.array(batch_data).T
+            if isinstance(batch_data, dict):
+                # New format with attention masks
+                input_batch = jnp.array(batch_data['input_ids']).T
+                attention_mask = jnp.array(batch_data['attention_mask']).T
+            else:
+                # Legacy format - fallback to old behavior
+                input_batch = jnp.array(batch_data).T
+                attention_mask = (input_batch != tokenizer.pad_token_id).astype(jnp.int32)
+            
             target_batch = prep_target_batch(input_batch)
-            batch = (input_batch, target_batch)
+            batch = (input_batch, target_batch, attention_mask)
 
             if mesh:
                 batch = jax.device_put(batch, NamedSharding(mesh, P(None, 'batch')))
 
-            train_step(
+            step_metrics = train_step(
                 student_model, teacher_params, optimizer, metrics_manager, batch, 
                 config.distill_config.distillation_alpha, 
                 config.distill_config.distillation_temperature
@@ -259,9 +297,16 @@ def main():
             if (step + 1) % config.train_config.log_interval == 0:
                 computed_metrics = metrics_manager.compute()
                 log_metrics = {k: v.item() for k, v in computed_metrics.items()}
+                
+                # Add the additional metrics from the latest step
+                log_metrics.update({
+                    'num_valid_tokens': float(step_metrics['num_valid_tokens']),
+                    'mask_ratio': float(step_metrics['mask_ratio'])
+                })
+                
                 logger.log_metrics(log_metrics, step=step + 1)
                 metrics_manager.reset()
-                print(f"Step {step + 1}, Loss: {log_metrics['loss']:.4f}, Distill Loss: {log_metrics['distill_loss']:.4f}, Student Loss: {log_metrics['student_loss']:.4f}")
+                print(f"Step {step + 1}, Loss: {log_metrics['loss']:.4f}, Distill Loss: {log_metrics['distill_loss']:.4f}, Student Loss: {log_metrics['student_loss']:.4f}, Mask Ratio: {log_metrics['mask_ratio']:.3f}")
 
             # Periodic generation comparison
             if (step + 1) % config.train_config.text_log_interval == 0 and config.train_config.run_generation:

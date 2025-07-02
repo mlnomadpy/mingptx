@@ -83,14 +83,22 @@ class StreamingTextDataSource(grain.RandomAccessDataSource):
             max_length=self.max_length,
             return_tensors="np"
         )
-        return tokens['input_ids'].squeeze(0).astype(np.int32)
+        return {
+            'input_ids': tokens['input_ids'].squeeze(0).astype(np.int32),
+            'attention_mask': tokens['attention_mask'].squeeze(0).astype(np.int32)
+        }
 
 def create_input_target_transform(pad_token_id: int):
-    """Transform that just returns the input ids, target is created in train."""
+    """Transform that returns input ids and attention masks, targets created in train."""
     
     def transform(batch):
-        # batch is now a numpy array of shape (batch_size, seq_len)
-        return np.array(batch)
+        # batch is now a list of dicts with 'input_ids' and 'attention_mask'
+        input_ids = np.array([item['input_ids'] for item in batch])
+        attention_mask = np.array([item['attention_mask'] for item in batch])
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask
+        }
     
     return transform
 
@@ -169,18 +177,21 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
         remove_columns=["text"]
     )
     
-    # We only need 'input_ids' for the model input.
-    # The 'attention_mask' is also available if your model uses it.
-    tokenized_dataset = tokenized_dataset.remove_columns(["attention_mask"])
+    # Keep both 'input_ids' and 'attention_mask' for proper masking
+    # Note: We now keep the attention_mask instead of removing it
 
     # Use a generator to feed data to tf.data.Dataset, which is compatible with IterableDataset
     def data_generator():
         for example in tokenized_dataset:
-            yield {'input_ids': example['input_ids']}
+            yield {
+                'input_ids': example['input_ids'],
+                'attention_mask': example['attention_mask']
+            }
 
     # Define the output signature for the generator
     output_signature = {
-        'input_ids': tf.TensorSpec(shape=(m_config.maxlen,), dtype=tf.int32)
+        'input_ids': tf.TensorSpec(shape=(m_config.maxlen,), dtype=tf.int32),
+        'attention_mask': tf.TensorSpec(shape=(m_config.maxlen,), dtype=tf.int32)
     }
 
     tf_dataset = tf.data.Dataset.from_generator(
@@ -194,10 +205,13 @@ def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: 
     
     tf_dataset = tf_dataset.batch(d_config.batch_size, drop_remainder=True)
 
-    def just_input_ids(batch):
-        return batch['input_ids']
+    def extract_inputs_and_masks(batch):
+        return {
+            'input_ids': batch['input_ids'],
+            'attention_mask': batch['attention_mask']
+        }
 
-    tf_dataset = tf_dataset.map(just_input_ids, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    tf_dataset = tf_dataset.map(extract_inputs_and_masks, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     tf_dataset = tf_dataset.prefetch(tf.data.experimental.AUTOTUNE)
     
     return tf_dataset 
