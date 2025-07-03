@@ -14,7 +14,7 @@ def causal_attention_mask(seq_len):
 class TransformerBlock(nnx.Module):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
         self.use_activation = config.use_activation
-
+        self.use_linear_out = config.use_linear_out
         # Handle partitioning based on whether mesh is available
         if mesh is not None:
             kernel_init = nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model')))
@@ -41,7 +41,6 @@ class TransformerBlock(nnx.Module):
 
         self.non_linear1 = YatNMN(
             in_features=config.embed_dim,
-            # out_features=config.feed_forward_dim,
             out_features=config.embed_dim,
             use_dropconnect=config.use_dropconnect,
             drop_rate=config.dropconnect_rate,
@@ -50,16 +49,15 @@ class TransformerBlock(nnx.Module):
             bias_init=bias_init,
             rngs=rngs
         )
-        # self.non_linear2 = YatNMN(
-        #     in_features=config.feed_forward_dim,
-        #     out_features=config.embed_dim,
-        #     use_dropconnect=config.use_dropconnect,
-        #     drop_rate=config.dropconnect_rate,
-        #     kernel_init=nnx.with_partitioning(nnx.initializers.orthogonal(), NamedSharding(mesh, P(None, 'model'))),
-        #     alpha_init=nnx.with_partitioning(nnx.initializers.ones_init(), NamedSharding(mesh, P(None, 'model'))),
-        #     bias_init=nnx.with_partitioning(nnx.initializers.zeros_init(), NamedSharding(mesh, P('model'))),
-        #     rngs=rngs
-        # )
+        self.out_linear1 = nnx.Linear(
+            in_features=config.embed_dim,
+            out_features=config.embed_dim,
+            use_dropconnect=config.use_dropconnect,
+            drop_rate=config.dropconnect_rate,
+            kernel_init=kernel_init,
+            bias_init=bias_init,
+            rngs=rngs
+        )
 
         self.dropout2 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
 
@@ -78,7 +76,7 @@ class TransformerBlock(nnx.Module):
         if self.use_activation:
             attention_output = softer_sigmoid(ffn_output)
             
-
-        # ffn_output = self.non_linear2(ffn_output)
+        if self.use_linear_out:
+            ffn_output = self.out_linear1(ffn_output)
         ffn_output = self.dropout2(ffn_output, deterministic=not training)
         return out1 + ffn_output

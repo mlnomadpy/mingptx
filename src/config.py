@@ -16,6 +16,7 @@ class ModelConfig:
     power: float = 1.0
     use_activation: bool = False
     use_yatnmn: bool = False
+    use_linear_out: bool = False
 
 @dataclass
 class DataConfig:

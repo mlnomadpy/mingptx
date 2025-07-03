@@ -73,6 +73,7 @@ def parse_args():
     parser.add_argument("--power", type=float, default=get_config_value("model_config", "power", model_config_defaults.power), help="Power for softermax.")
     parser.add_argument("--use_activation", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_activation", model_config_defaults.use_activation), help="Whether to use activation.")
     parser.add_argument("--use_yatnmn", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_yatnmn", model_config_defaults.use_yatnmn), help="Whether to use YatNMN layers.")
+    parser.add_argument("--use_linear_out", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("model_config", "use_linear_out", model_config_defaults.use_linear_out), help="Whether to use a linear layer after the non-linearity in the transformer block.")
 
     # Data args
     data_config_defaults = default_config.data_config
@@ -132,7 +133,8 @@ def parse_args():
             use_softermax=args.use_softermax,
             power=args.power,
             use_activation=args.use_activation,
-            use_yatnmn=args.use_yatnmn
+            use_yatnmn=args.use_yatnmn,
+            use_linear_out=args.use_linear_out
         ),
         data_config=DataConfig(
             dataset_name=args.dataset_name,
