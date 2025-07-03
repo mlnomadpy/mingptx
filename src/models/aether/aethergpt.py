@@ -39,7 +39,7 @@ class MiniGPT(GPT):
                 rngs=rngs
             )
         else:
-            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init)
+            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init, rngs=rngs)
 
     def __call__(self, inputs, training: bool = False):
         x = self.embedding_layer(inputs)
@@ -77,7 +77,7 @@ class MiniGPT(GPT):
                 rngs=rngs
             )
         else:
-            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init)
+            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init, rngs=rngs)
 
     def __call__(self, inputs, training: bool = False):
         x = self.embedding_layer(inputs)
@@ -169,7 +169,7 @@ class MiniCygnusGPT(GPT):
                 rngs=rngs
             )
         else:
-            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init)
+            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init, rngs=rngs)
 
     def __call__(self, inputs, training: bool = False):
         x = self.embedding_layer(inputs)
@@ -208,7 +208,7 @@ class MicroGPT(GPT):
                 rngs=rngs
             )
         else:
-            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init)
+            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init, rngs=rngs)
 
     def __call__(self, inputs, training: bool = False):
         x = self.embedding_layer(inputs)
