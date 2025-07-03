@@ -320,18 +320,6 @@ def main():
                 except Exception as e:
                     print(f"Student generation failed: {e}")
                 
-                try:
-                    input_ids = tokenizer.encode(config.train_config.start_prompt, return_tensors="jax")
-                    teacher_outputs = teacher_model.generate(
-                        input_ids=input_ids, params=teacher_params, max_new_tokens=50,
-                        do_sample=True, temperature=1.0, top_k=10,
-                        pad_token_id=tokenizer.pad_token_id, eos_token_id=tokenizer.eos_token_id
-                    )
-                    teacher_text = tokenizer.decode(teacher_outputs.sequences[0], skip_special_tokens=True)
-                    print(f"Teacher: {teacher_text}")
-                    logger.log_text("teacher_generation", teacher_text, step=step + 1)
-                except Exception as e:
-                    print(f"Teacher generation failed: {e}")
                 print("=== End Generation Comparison ===\n")
 
             step += 1
