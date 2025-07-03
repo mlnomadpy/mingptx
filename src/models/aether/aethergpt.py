@@ -122,7 +122,7 @@ class MiniCygnusGPT(GPT):
         
         if config.use_yatnmn:
             self.output_layer = YatNMN(
-                in_features=config.embed_dim,
+                in_features=config.self.final_dim,
                 out_features=config.vocab_size,
                 kernel_init=kernel_init,
                 alpha_init=alpha_init,
@@ -131,7 +131,7 @@ class MiniCygnusGPT(GPT):
                 rngs=rngs
             )
         else:
-            self.output_layer = nnx.Linear(config.embed_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init, rngs=rngs)
+            self.output_layer = nnx.Linear(self.final_dim, config.vocab_size, kernel_init=kernel_init, bias_init=bias_init, rngs=rngs)
 
     def __call__(self, inputs, training: bool = False):
         x = self.embedding_layer(inputs)
