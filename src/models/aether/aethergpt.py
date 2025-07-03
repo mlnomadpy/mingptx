@@ -122,7 +122,7 @@ class MiniCygnusGPT(GPT):
         
         if config.use_yatnmn:
             self.output_layer = YatNMN(
-                in_features=config.self.final_dim,
+                in_features=self.final_dim,
                 out_features=config.vocab_size,
                 kernel_init=kernel_init,
                 alpha_init=alpha_init,
