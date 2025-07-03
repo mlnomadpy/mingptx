@@ -52,8 +52,6 @@ class TransformerBlock(nnx.Module):
         self.out_linear1 = nnx.Linear(
             in_features=config.embed_dim,
             out_features=config.embed_dim,
-            use_dropconnect=config.use_dropconnect,
-            drop_rate=config.dropconnect_rate,
             kernel_init=kernel_init,
             bias_init=bias_init,
             rngs=rngs
