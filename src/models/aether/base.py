@@ -9,7 +9,7 @@ from nmn.nnx.nmn import YatNMN
 from nmn.nnx.squashers.softer_sigmoid import softer_sigmoid
 
 def causal_attention_mask(seq_len):
-    return jnp.tril(jnp.ones((seq_len, seq_len)))
+    return jnp.tril(jnp.ones((seq_len, seq_len), dtype=jnp.bool_))
 
 class TransformerBlock(nnx.Module):
     def __init__(self, config: ModelConfig, mesh: Mesh, *, rngs: nnx.Rngs):
