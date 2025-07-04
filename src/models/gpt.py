@@ -32,12 +32,13 @@ class GPT(nnx.Module):
         
         start_tokens = tokenizer.encode(start_prompt, return_tensors="jax")[0].tolist()
         
-        def sample_from(logits, key):
+        def sample_from(logits):
             logits, indices = jax.lax.top_k(logits, k=top_k)
+            # Convert logits to probabilities
             logits = nnx.softmax(logits)
-            return jax.random.choice(key, indices, p=logits)
+            return jax.random.choice(jax.random.PRNGKey(0), indices, p=logits)
 
-        def generate_step(tokens, key):
+        def generate_step(tokens):
             pad_len = self.config.maxlen - len(tokens)
             sample_index = len(tokens) - 1
             if pad_len < 0:
@@ -50,16 +51,15 @@ class GPT(nnx.Module):
 
             x = x[None, :] # Add batch dimension -> (1, seq_len)
             logits = self(x, training=False)
-            next_token = sample_from(logits[0, sample_index], key)
+            next_token = sample_from(logits[0, sample_index])
             return next_token
 
-        key = jax.random.PRNGKey(42)  # Base key for reproducibility
         generated_tokens = []
         for _ in range(max_tokens):
-            key, subkey = jax.random.split(key)
-            next_token = generate_step(start_tokens + generated_tokens, subkey)
+            next_token = generate_step(start_tokens + generated_tokens)
             if next_token == tokenizer.eos_token_id:
                 break
             generated_tokens.append(int(next_token))
         
         return tokenizer.decode(start_tokens + generated_tokens) 
+    
