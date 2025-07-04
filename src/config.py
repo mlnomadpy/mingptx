@@ -20,14 +20,14 @@ class ModelConfig:
 
 @dataclass
 class DataConfig:
-    dataset_name: str = 'roneneldan/TinyStories'
-    split: str = 'train'
-    validation_split_name: str = 'validation'
-    batch_size: int = 256
-    tokenizer_name: str = 'gpt2'
-    # Data loading configuration
+    dataset_name: str = "openwebtext"
+    split: str = "train"
+    validation_split_name: str = "validation"
+    batch_size: int = 96
+    tokenizer_name: str = "cl100k_base"  # Updated for tiktoken
+    tokenizer_type: str = "tiktoken" # Can be 'huggingface' or 'tiktoken'
     loader: str = "tf"  # 'grain' or 'tf'
-    use_cache: bool = True  # Whether to cache the dataset. Applies to both 'grain' and 'tf' loaders.
+    use_cache: bool = False
     shuffle_seed: int = 42
     shuffle_buffer_size: int = 10_000
     cache_size: int = 10_000  # Used only for the 'grain' loader's cache.

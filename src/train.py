@@ -12,6 +12,7 @@ from transformers import AutoTokenizer
 import argparse
 import yaml
 import numpy as np
+import tiktoken
 
 from config import ProjectConfig, ModelConfig, DataConfig, TrainConfig
 from dataset import load_text_dataset
@@ -82,6 +83,7 @@ def parse_args():
     parser.add_argument("--validation_split_name", type=str, default=get_config_value("data_config", "validation_split_name", data_config_defaults.validation_split_name), help="Dataset validation split to use.")
     parser.add_argument("--batch_size", type=int, default=get_config_value("data_config", "batch_size", data_config_defaults.batch_size), help="Batch size for training.")
     parser.add_argument("--tokenizer_name", type=str, default=get_config_value("data_config", "tokenizer_name", data_config_defaults.tokenizer_name), help="Tokenizer to use.")
+    parser.add_argument("--tokenizer_type", type=str, default=get_config_value("data_config", "tokenizer_type", data_config_defaults.tokenizer_type), help="Type of tokenizer to use ('huggingface' or 'tiktoken').")
     parser.add_argument("--loader", type=str, default=get_config_value("data_config", "loader", data_config_defaults.loader), help="Data loader to use ('grain' or 'tf').")
     parser.add_argument("--use_cache", type=lambda x: (str(x).lower() == 'true'), default=get_config_value("data_config", "use_cache", data_config_defaults.use_cache), help="Whether to use caching.")
     parser.add_argument("--shuffle_seed", type=int, default=get_config_value("data_config", "shuffle_seed", data_config_defaults.shuffle_seed), help="Seed for dataset shuffling.")
@@ -142,6 +144,7 @@ def parse_args():
             validation_split_name=args.validation_split_name,
             batch_size=args.batch_size,
             tokenizer_name=args.tokenizer_name,
+            tokenizer_type=args.tokenizer_type,
             loader=args.loader,
             use_cache=args.use_cache,
             shuffle_seed=args.shuffle_seed,
@@ -188,12 +191,21 @@ def main():
     }, use_wandb=config.train_config.use_wandb)
 
     # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(config.data_config.tokenizer_name, use_fast=False)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    if config.data_config.tokenizer_type == "tiktoken":
+        tokenizer = tiktoken.get_encoding(config.data_config.tokenizer_name)
+        pad_token_id = tokenizer.eot_token
+        # Update vocab_size in config from tokenizer
+        config.model_config.vocab_size = tokenizer.n_vocab
+    elif config.data_config.tokenizer_type == "huggingface":
+        tokenizer = AutoTokenizer.from_pretrained(config.data_config.tokenizer_name, use_fast=False)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        pad_token_id = tokenizer.pad_token_id
+    else:
+        raise ValueError(f"Unknown tokenizer type: {config.data_config.tokenizer_type}")
 
     # Load data
-    text_dl = load_text_dataset(config.data_config, config.model_config, config.train_config, config.data_config.tokenizer_name, tokenizer.pad_token_id)
+    text_dl = load_text_dataset(config.data_config, config.model_config, config.train_config, tokenizer, pad_token_id)
 
     # Create model
     rngs = nnx.Rngs(0)
@@ -244,7 +256,7 @@ def main():
         target_mask = jnp.concatenate([sequence_mask[:, 1:], jnp.zeros((sequence_mask.shape[0], 1), dtype=bool)], axis=1)
         
         # Additional safety: ensure targets are valid (not padding tokens)
-        valid_target_mask = labels != tokenizer.pad_token_id
+        valid_target_mask = labels != pad_token_id
         
         # Combine all masking conditions
         final_mask = target_mask & valid_target_mask
@@ -286,7 +298,8 @@ def main():
         generated_text = model.generate_text(
             max_tokens=config.model_config.maxlen, 
             start_prompt=start_prompt,
-            tokenizer=tokenizer
+            tokenizer=tokenizer,
+            pad_token_id=pad_token_id
         )
         logger.log_text("initial_generated_text", generated_text)
 
@@ -295,7 +308,7 @@ def main():
 
     # Correctly vmap over the batch dimension (axis 0) of (batch_size, maxlen) arrays
     prep_target_batch = jax.vmap(
-        lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
+        lambda tokens: jnp.concatenate((tokens[1:], jnp.array([pad_token_id]))), 
         in_axes=0, 
         out_axes=0
     )
@@ -398,7 +411,8 @@ def main():
                 generated_text = model.generate_text(
                     max_tokens=config.model_config.maxlen, 
                     start_prompt=start_prompt,
-                    tokenizer=tokenizer
+                    tokenizer=tokenizer,
+                    pad_token_id=pad_token_id
                 )
                 logger.log_text("generated_text", generated_text, step=step + 1)
 
@@ -418,7 +432,8 @@ def main():
         final_text = model.generate_text(
             max_tokens=config.model_config.maxlen, 
             start_prompt=start_prompt,
-            tokenizer=tokenizer
+            tokenizer=tokenizer,
+            pad_token_id=pad_token_id
         )
         logger.log_text("final_generated_text", final_text, step=step)
 
@@ -454,7 +469,8 @@ def main():
     test_generated_text = test_model.generate_text(
         max_tokens=config.model_config.maxlen,
         start_prompt=start_prompt,
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        pad_token_id=pad_token_id
     )
     logger.log_text("test_generated_text", test_generated_text, step=step)
     print("--- Text generated from loaded model ---")

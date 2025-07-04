@@ -7,23 +7,42 @@ from functools import lru_cache
 import numpy as np
 from typing import Iterator, Dict, Any
 import threading
+import tiktoken
 
 from config import DataConfig, ModelConfig, TrainConfig
+
+def encode_with_tiktoken(text, tokenizer, max_length):
+    """Encodes text using tiktoken, handling padding and truncation."""
+    tokens = tokenizer.encode(text)
+    tokens = tokens[:max_length]  # Truncate
+    
+    padding_needed = max_length - len(tokens)
+    padded_tokens = tokens + [tokenizer.eot_token] * padding_needed
+    
+    attention_mask = [1] * len(tokens) + [0] * padding_needed
+    
+    return {
+        'input_ids': np.array(padded_tokens, dtype=np.int32),
+        'attention_mask': np.array(attention_mask, dtype=np.int32)
+    }
 
 # This is a streaming data source for Grain
 class StreamingTextDataSource(grain.RandomAccessDataSource):
     """A streaming data source for Grain that tokenizes on the fly."""
-    def __init__(self, dataset_name: str, split: str, tokenizer_name: str, max_length: int, d_config: DataConfig):
+    def __init__(self, dataset_name: str, split: str, tokenizer: Any, max_length: int, d_config: DataConfig):
         self.dataset_name = dataset_name
         self.split = split
+        self.tokenizer = tokenizer
         self.max_length = max_length
         self.d_config = d_config
         self._generation = 0
 
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=d_config.use_fast_tokenizer)
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        # Check tokenizer type
+        self.is_tiktoken = isinstance(self.tokenizer, tiktoken.Encoding)
+
+        if not self.is_tiktoken:
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
 
         # Load dataset in streaming mode and create an iterator
         self.hf_dataset = load_dataset(dataset_name, split=split, streaming=True)
@@ -76,17 +95,21 @@ class StreamingTextDataSource(grain.RandomAccessDataSource):
         
         # Get example from the in-memory buffer
         example = self.buffer[index]
-        tokens = self.tokenizer(
-            example["text"],
-            truncation=True,
-            padding="max_length",
-            max_length=self.max_length,
-            return_tensors="np"
-        )
-        return {
-            'input_ids': tokens['input_ids'].squeeze(0).astype(np.int32),
-            'attention_mask': tokens['attention_mask'].squeeze(0).astype(np.int32)
-        }
+
+        if self.is_tiktoken:
+            return encode_with_tiktoken(example["text"], self.tokenizer, self.max_length)
+        else:
+            tokens = self.tokenizer(
+                example["text"],
+                truncation=True,
+                padding="max_length",
+                max_length=self.max_length,
+                return_tensors="np"
+            )
+            return {
+                'input_ids': tokens['input_ids'].squeeze(0).astype(np.int32),
+                'attention_mask': tokens['attention_mask'].squeeze(0).astype(np.int32)
+            }
 
 def create_input_target_transform(pad_token_id: int):
     """Transform that returns input ids and attention masks, targets created in train."""
@@ -102,18 +125,18 @@ def create_input_target_transform(pad_token_id: int):
     
     return transform
 
-def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
+def load_text_dataset(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer: Any, pad_token_id: int):
     """Loads dataset using the loader specified in the config."""
     loader_name = str(d_config.loader).strip().lower()
 
     if loader_name == 'grain':
-        return load_text_dataset_grain(d_config, m_config, t_config, tokenizer_name, pad_token_id)
+        return load_text_dataset_grain(d_config, m_config, t_config, tokenizer, pad_token_id)
     elif loader_name == 'tf':
-        return load_text_dataset_tf(d_config, m_config, t_config, tokenizer_name, pad_token_id)
+        return load_text_dataset_tf(d_config, m_config, t_config, tokenizer, pad_token_id)
     else:
         raise ValueError(f"Unknown data loader: '{d_config.loader}'. Must be 'grain' or 'tf'.")
 
-def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
+def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer: Any, pad_token_id: int):
     """
     Loads and prepares a text dataset for training with JAX using Grain.
     - Uses JAX-native data loading for better performance
@@ -126,7 +149,7 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
     data_source = StreamingTextDataSource(
         dataset_name=d_config.dataset_name,
         split=d_config.split,
-        tokenizer_name=tokenizer_name,
+        tokenizer=tokenizer,
         max_length=m_config.maxlen,
         d_config=d_config
     )
@@ -145,30 +168,35 @@ def load_text_dataset_grain(d_config: DataConfig, m_config: ModelConfig, t_confi
     return dataset
 
 # Main function for TensorFlow-based loading
-def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer_name: str, pad_token_id: int):
+def load_text_dataset_tf(d_config: DataConfig, m_config: ModelConfig, t_config: TrainConfig, tokenizer: Any, pad_token_id: int):
     """
     TensorFlow-based data loading pipeline, that works with older and newer versions of `datasets`.
     Supports both streaming and shuffling.
     """
     import tensorflow as tf
     from transformers import AutoTokenizer
-
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=d_config.use_fast_tokenizer)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    is_tiktoken = isinstance(tokenizer, tiktoken.Encoding)
 
     # streaming=True returns an IterableDataset
     hf_dataset = load_dataset(d_config.dataset_name, split=d_config.split, streaming=True)
 
     def tokenize_function(examples):
-        # We'll handle tensor conversion in the generator.
-        return tokenizer(
-            examples["text"],
-            truncation=True,
-            padding="max_length",
-            max_length=m_config.maxlen,
-        )
+        if is_tiktoken:
+            # We need to process examples one by one for tiktoken
+            tokenized_examples = [encode_with_tiktoken(text, tokenizer, m_config.maxlen) for text in examples["text"]]
+            # And then stack them
+            return {
+                'input_ids': np.array([ex['input_ids'] for ex in tokenized_examples]),
+                'attention_mask': np.array([ex['attention_mask'] for ex in tokenized_examples])
+            }
+        else:
+            # We'll handle tensor conversion in the generator.
+            return tokenizer(
+                examples["text"],
+                truncation=True,
+                padding="max_length",
+                max_length=m_config.maxlen,
+            )
 
     # The map function is applied on-the-fly.
     tokenized_dataset = hf_dataset.map(

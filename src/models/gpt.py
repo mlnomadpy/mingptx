@@ -26,12 +26,17 @@ class GPT(nnx.Module):
     def __call__(self, inputs, attention_mask=None, training: bool = False):
         raise NotImplementedError
 
-    def generate_text(self, max_tokens: int, start_prompt: str, tokenizer, top_k=10):
-        if tokenizer.pad_token is None:
+    def generate_text(self, max_tokens: int, start_prompt: str, tokenizer, pad_token_id, top_k=10):
+        is_tiktoken = hasattr(tokenizer, 'eot_token')
+        eos_token_id = tokenizer.eot_token if is_tiktoken else tokenizer.eos_token_id
+
+        if not is_tiktoken and tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        
-        start_tokens = tokenizer.encode(start_prompt, return_tensors="jax")[0].tolist()
-        
+
+        start_tokens = tokenizer.encode(start_prompt)
+        if not is_tiktoken:
+            start_tokens = start_tokens.tolist()
+
         def sample_from(logits):
             logits, indices = jax.lax.top_k(logits, k=top_k)
             # Convert logits to probabilities
@@ -46,7 +51,7 @@ class GPT(nnx.Module):
                 attention_mask = jnp.ones_like(x)
                 sample_index = self.config.maxlen - 1
             elif pad_len > 0:
-                x = jnp.array(tokens + [tokenizer.pad_token_id] * pad_len)
+                x = jnp.array(tokens + [pad_token_id] * pad_len)
                 attention_mask = jnp.array([1] * len(tokens) + [0] * pad_len)
             else:
                 x = jnp.array(tokens)
@@ -61,7 +66,7 @@ class GPT(nnx.Module):
         generated_tokens = []
         for _ in range(max_tokens):
             next_token = generate_step(start_tokens + generated_tokens)
-            if next_token == tokenizer.eos_token_id:
+            if next_token == eos_token_id:
                 break
             generated_tokens.append(int(next_token))
         
