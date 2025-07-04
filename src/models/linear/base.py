@@ -75,11 +75,20 @@ class TransformerBlock(nnx.Module):
             # so we can combine them with a logical AND.
             # (batch_size, seq_len) -> (batch_size, 1, seq_len)
             padding_mask = attention_mask[:, None, :].astype(jnp.bool_)
+            # (seq_len, seq_len) & (batch, 1, seq_len) -> (batch, seq_len, seq_len)
             combined_mask = causal_mask & padding_mask
         else:
             combined_mask = causal_mask
 
-        attention_output = self.mha(inputs_q=inputs, mask=combined_mask, decode=False)
+        # Add head dimension for broadcasting to attention weights
+        if combined_mask.ndim == 2:
+            # (seq_len, seq_len) -> (1, 1, seq_len, seq_len)
+            mask_for_mha = combined_mask[None, None, :, :]
+        else:
+            # (batch, seq_len, seq_len) -> (batch, 1, seq_len, seq_len)
+            mask_for_mha = combined_mask[:, None, :, :]
+
+        attention_output = self.mha(inputs_q=inputs, mask=mask_for_mha, decode=False)
         attention_output = self.dropout1(attention_output, deterministic=not training)
         out1 = self.layer_norm1(inputs + attention_output)
         
