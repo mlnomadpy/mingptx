@@ -60,10 +60,21 @@ class TransformerBlock(nnx.Module):
         self.dropout2 = nnx.Dropout(rate=config.dropout_rate, rngs=rngs)
 
 
-    def __call__(self, inputs, training: bool = False):
-        _, seq_len, _ = inputs.shape
-        mask = causal_attention_mask(seq_len)
-        attention_output = self.mha(inputs_q=inputs, mask=mask, decode=False, deterministic=not training)
+    def __call__(self, inputs, attention_mask=None, training: bool = False):
+        batch_size, seq_len, _ = inputs.shape
+        causal_mask = causal_attention_mask(seq_len)
+
+        if attention_mask is not None:
+            # The attention_mask from the input is broadcastable to the causal_mask,
+            # so we can combine them with a logical AND.
+            # (batch_size, seq_len) -> (batch_size, 1, seq_len)
+            padding_mask = attention_mask[:, None, :]
+            combined_mask = causal_mask & padding_mask
+        else:
+            combined_mask = causal_mask
+
+
+        attention_output = self.mha(inputs_q=inputs, mask=combined_mask, decode=False, deterministic=not training)
         if self.use_activation:
             attention_output = softer_sigmoid(attention_output)
 

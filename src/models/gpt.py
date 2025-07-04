@@ -23,7 +23,7 @@ class GPT(nnx.Module):
         self.config = config
         self.mesh = mesh
 
-    def __call__(self, inputs, training: bool = False):
+    def __call__(self, inputs, attention_mask=None, training: bool = False):
         raise NotImplementedError
 
     def generate_text(self, max_tokens: int, start_prompt: str, tokenizer, top_k=10):
@@ -43,14 +43,18 @@ class GPT(nnx.Module):
             sample_index = len(tokens) - 1
             if pad_len < 0:
                 x = jnp.array(tokens[:self.config.maxlen])
+                attention_mask = jnp.ones_like(x)
                 sample_index = self.config.maxlen - 1
             elif pad_len > 0:
                 x = jnp.array(tokens + [tokenizer.pad_token_id] * pad_len)
+                attention_mask = jnp.array([1] * len(tokens) + [0] * pad_len)
             else:
                 x = jnp.array(tokens)
+                attention_mask = jnp.ones_like(x)
 
             x = x[None, :] # Add batch dimension -> (1, seq_len)
-            logits = self(x, training=False)
+            attention_mask = attention_mask[None, :] # Add batch dimension
+            logits = self(x, attention_mask=attention_mask, training=False)
             next_token = sample_from(logits[0, sample_index])
             return next_token
 

@@ -32,10 +32,10 @@ class MiniGPT(GPT):
             rngs=rngs
         )
 
-    def __call__(self, inputs, training: bool = False):
+    def __call__(self, inputs, attention_mask=None, training: bool = False):
         x = self.embedding_layer(inputs)
         for transformer_block in self.transformer_blocks:
-            x = transformer_block(x, training=training)
+            x = transformer_block(x, attention_mask=attention_mask, training=training)
         return self.output_layer(x)
 
 @register_model("micro-gpt")
@@ -61,7 +61,7 @@ class MicroGPT(GPT):
             rngs=rngs
         )
 
-    def __call__(self, inputs, training: bool = False):
+    def __call__(self, inputs, attention_mask=None, training: bool = False):
         x = self.embedding_layer(inputs)
-        x = self.transformer_block(x, training=training)
+        x = self.transformer_block(x, attention_mask=attention_mask, training=training)
         return self.output_layer(x) 

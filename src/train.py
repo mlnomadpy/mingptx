@@ -218,7 +218,7 @@ def main():
     # Loss function
     def loss_fn(mdl, batch):
         inputs, labels, attention_mask = batch
-        logits = mdl(inputs, training=True)
+        logits = mdl(inputs, attention_mask=attention_mask, training=True)
         
         # Calculate loss per token based on the configured loss function
         if config.train_config.loss_function == "softermax":
@@ -241,7 +241,7 @@ def main():
         
         # For causal LM, we don't predict the token after the last real token
         # Shift sequence_mask to align with targets (targets are inputs shifted left)
-        target_mask = jnp.concatenate([sequence_mask[1:], jnp.zeros((1, sequence_mask.shape[1]), dtype=bool)], axis=0)
+        target_mask = jnp.concatenate([sequence_mask[:, 1:], jnp.zeros((sequence_mask.shape[0], 1), dtype=bool)], axis=1)
         
         # Additional safety: ensure targets are valid (not padding tokens)
         valid_target_mask = labels != tokenizer.pad_token_id
@@ -293,11 +293,11 @@ def main():
     # Training loop
     metrics_history = {'train_loss': [], 'steps': []}
 
-    # Correctly vmap over the batch dimension (axis 1) of (maxlen, batch_size) arrays
+    # Correctly vmap over the batch dimension (axis 0) of (batch_size, maxlen) arrays
     prep_target_batch = jax.vmap(
         lambda tokens: jnp.concatenate((tokens[1:], jnp.array([tokenizer.pad_token_id]))), 
-        in_axes=1, 
-        out_axes=1
+        in_axes=0, 
+        out_axes=0
     )
 
     step = 0
@@ -322,8 +322,8 @@ def main():
 
         for batch_data in data_iterator:
             # Extract input_ids and attention_mask from the batch
-            input_batch = jnp.array(batch_data['input_ids']).T
-            attention_mask = jnp.array(batch_data['attention_mask']).T
+            input_batch = jnp.array(batch_data['input_ids'])
+            attention_mask = jnp.array(batch_data['attention_mask'])
             
             # Create target by shifting input using the vmapped function
             target_batch = prep_target_batch(input_batch)
@@ -346,8 +346,8 @@ def main():
             batch_data = (input_batch, target_batch, attention_mask)
 
             if mesh:
-                # Shard the batch dimension (axis 1) across the 'batch' mesh axis
-                batch_data = jax.device_put(batch_data, NamedSharding(mesh, P(None, 'batch')))
+                # Shard the batch dimension (axis 0) across the 'batch' mesh axis
+                batch_data = jax.device_put(batch_data, NamedSharding(mesh, P('batch', None)))
             
             grad_norms, step_metrics = train_step(model, optimizer, metrics_manager, batch_data)
 
